@@ -615,6 +615,50 @@ async function handle(req, env, ctx){
     catch(e){ return J({connected: false, error: 'db', message: String(e && e.message || e).slice(0, 200)}, 200); }
   }
 
+  // Cuaca (Open-Meteo, tanpa kunci) — cache 15 minit
+  if(p === '/api/cuaca' && m === 'GET'){
+    const lat = Math.round(Number(url.searchParams.get('lat') || 3.0449) * 100) / 100, lon = Math.round(Number(url.searchParams.get('lon') || 101.4456) * 100) / 100;
+    if(!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return J({error: 'coords'}, 400);
+    const key = `wx:${lat},${lon}`, hit = await getMeta(env, key);
+    if(hit){ const c = JSON.parse(hit); if(Date.now() - c.at < 15 * 60000) return J(c); }
+    const q = new URLSearchParams({latitude: lat, longitude: lon, timezone: 'Asia/Kuala_Lumpur', forecast_days: '2',
+      current: 'temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day,precipitation',
+      hourly: 'temperature_2m,precipitation_probability,weather_code',
+      daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max,weather_code'});
+    try {
+      const r = await fetch('https://api.open-meteo.com/v1/forecast?' + q);
+      if(!r.ok) throw new Error('upstream ' + r.status);
+      const d = await r.json();
+      const out = {at: Date.now(), lat, lon, current: d.current || {}, hourly: d.hourly || {}, daily: d.daily || {}};
+      await setMeta(env, key, JSON.stringify(out));
+      return J(out);
+    } catch(e){ return hit ? J(JSON.parse(hit)) : J({error: 'cuaca'}, 502); }
+  }
+  // Waktu solat JAKIM (e-Solat), cache sehari; sandaran Aladhan (kaedah JAKIM)
+  if(p === '/api/solat' && m === 'GET'){
+    const zone = /^[A-Z]{3}\d{2}$/.test(url.searchParams.get('zone') || '') ? url.searchParams.get('zone') : 'SGR03';
+    const t = todayLocal(), key = `solat:${zone}:${t}`, hit = await getMeta(env, key);
+    if(hit) return J(JSON.parse(hit));
+    const hm = v => String(v || '').slice(0, 5);
+    let out = null;
+    try {
+      const r = await fetch(`https://www.e-solat.gov.my/index.php?r=esolatApi/TakwimSolat&period=today&zone=${zone}`, {headers: {'user-agent': 'heyarmay.com'}});
+      const d = await r.json(); const x = d && d.prayerTime && d.prayerTime[0];
+      if(x && x.fajr) out = {date: t, zone, src: 'JAKIM', hijri: x.hijri || '', times: {imsak: hm(x.imsak), subuh: hm(x.fajr), syuruk: hm(x.syuruk), zohor: hm(x.dhuhr), asar: hm(x.asr), maghrib: hm(x.maghrib), isyak: hm(x.isha)}};
+    } catch(e){}
+    if(!out){
+      try {
+        const [y, mo, da] = t.split('-');
+        const r = await fetch(`https://api.aladhan.com/v1/timings/${da}-${mo}-${y}?latitude=3.0449&longitude=101.4456&method=17`);
+        const d = await r.json(); const x = d && d.data && d.data.timings;
+        if(x) out = {date: t, zone, src: 'Aladhan (JAKIM)', times: {imsak: hm(x.Imsak), subuh: hm(x.Fajr), syuruk: hm(x.Sunrise), zohor: hm(x.Dhuhr), asar: hm(x.Asr), maghrib: hm(x.Maghrib), isyak: hm(x.Isha)}};
+      } catch(e){}
+    }
+    if(!out) return J({error: 'solat'}, 502);
+    await setMeta(env, key, JSON.stringify(out));
+    return J(out);
+  }
+
   // Gambar resit
   if(p === '/api/files' && m === 'POST'){
     const type = (req.headers.get('content-type') || '').split(';')[0].trim();

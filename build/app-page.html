@@ -632,6 +632,122 @@ const goto = (v,l) => `<a class="btn ghost sm" href="#${v}" data-view="${v}">${l
 /* ---------- views ---------- */
 function greet(){ const h = new Date().getHours(); return h<12?'Selamat pagi':h<14?'Selamat tengah hari':h<19?'Selamat petang':'Selamat malam'; }
 
+/* ---------- HUD "Jarvis": jam, cuaca, waktu solat, taklimat ---------- */
+let wx = null, solat = null;
+const DEF_LOC = {lat: 3.0449, lon: 101.4456, label: 'Klang'};
+function myLoc(){ try { const l = JSON.parse(localStorage.getItem('hy-loc') || 'null'); if(l && isFinite(l.lat) && isFinite(l.lon)) return l; } catch(e){} return DEF_LOC; }
+async function loadEnv(force){
+  if(!window.__standalone) return;
+  const L = myLoc();
+  try { const r = await fetch(`/api/cuaca?lat=${L.lat}&lon=${L.lon}`, {cache:'no-store'}); if(r.ok) wx = Object.assign(await r.json(), {label: L.label}); } catch(e){}
+  try { if(force || !solat || solat.date !== today()){ const r = await fetch('/api/solat?zone=SGR03', {cache:'no-store'}); if(r.ok) solat = await r.json(); } } catch(e){}
+  if(ui.view === 'hari-ini') render();
+}
+const WMO = c => c===0?['Cerah','sun']:c===1?['Kebanyakannya cerah','sun']:c===2?['Separa mendung','partly']:c===3?['Mendung','cloud']:c===45||c===48?['Berkabus','fog']
+  :c>=51&&c<=57?['Gerimis','rain']:c===61?['Hujan renyai','rain']:c===63?['Hujan','rain']:c>=65&&c<=67?['Hujan lebat','rain']:c>=80&&c<=82?[c===82?'Hujan lebat':'Hujan sekejap-sekejap','rain']
+  :c===95?['Ribut petir','storm']:c>=96?['Ribut petir kuat','storm']:['—','cloud'];
+function wxIcon(kind, night){
+  const s = 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
+  const cloud = '<path d="M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.1 11.2 3.5 3.5 0 0 0 7 18z"/>';
+  const sun = '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/>';
+  const moon = '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>';
+  const k = kind==='sun' && night ? 'moon' : kind;
+  const body = k==='sun'?sun:k==='moon'?moon:k==='partly'?(night?'<path d="M14 3.6A5 5 0 0 0 18.4 10"/>':'<path d="M8 3v1.5M3.5 7.5H5M4.8 4.3l1 1M12 5.6A4 4 0 0 0 6 7"/>')+cloud
+    :k==='rain'?'<g transform="translate(0 -3)">'+cloud+'</g><path d="M8 18l-1 3M12 18l-1 3M16 18l-1 3"/>'
+    :k==='storm'?cloud+'<path d="M12.5 13l-2.5 4h3l-2 4"/>':k==='fog'?'<path d="M4 9h16M3 13h18M5 17h14"/>':cloud;
+  return `<svg viewBox="0 0 24 24" ${s} aria-hidden="true">${body}</svg>`;
+}
+const SOLAT = [['imsak','Imsak'],['subuh','Subuh'],['syuruk','Syuruk'],['zohor','Zohor'],['asar','Asar'],['maghrib','Maghrib'],['isyak','Isyak']];
+function nextSolat(){
+  if(!solat || !solat.times) return null;
+  const now = new Date(), hm = now.getHours()*60 + now.getMinutes();
+  for(const [k, l] of SOLAT){ if(k==='imsak' || k==='syuruk') continue; const [h, m] = (solat.times[k]||'').split(':').map(Number); if(isFinite(h) && h*60+m > hm) return {k, l, at: solat.times[k], mins: h*60+m-hm}; }
+  return null;
+}
+const durTxt = m => m >= 60 ? `${Math.floor(m/60)}j ${m%60}m` : `${m} min`;
+function hudStats(){
+  const t = today(), now = new Date();
+  const day = (now.getHours()*60 + now.getMinutes()) / 1440;
+  const tasks = byKind('task').filter(i => !i.example), done = tasks.filter(i => i.done).length;
+  return {day, task: tasks.length ? done / tasks.length : 0, done, total: tasks.length, t};
+}
+function hudBrief(agendaN, tkN){
+  const parts = [];
+  parts.push(agendaN ? `${agendaN} perkara dalam jadual hari ini` : 'Jadual hari ini kosong');
+  if(tkN) parts.push(`${tkN} tugasan perlu perhatian`);
+  if(team.connected){ const n = teamShoots(today()).length; parts.push(n ? `${n} job team hari ini` : 'tiada job team hari ini'); }
+  if(wx && wx.hourly && wx.hourly.time){
+    const i0 = Math.max(0, wx.hourly.time.findIndex(x => x >= ymd(new Date()) + 'T' + pad(new Date().getHours()) + ':00'));
+    const pr = (wx.hourly.precipitation_probability || []).slice(i0, i0 + 6), mx = Math.max(0, ...pr);
+    if(mx >= 40){ const at = wx.hourly.time[i0 + pr.indexOf(mx)].slice(11, 16); parts.push(`peluang hujan ${mx}% sekitar ${fmtT(at)}`); }
+  }
+  const ns = nextSolat(); if(ns) parts.push(`${ns.l} dalam ${durTxt(ns.mins)}`);
+  return parts.join(' · ');
+}
+function hudHtml(agendaN, tkN){
+  const S = hudStats(), d = new Date();
+  const C = 2 * Math.PI, ring = (r, f) => `stroke-dasharray="${(C*r*f).toFixed(1)} ${(C*r).toFixed(1)}"`;
+  const cur = wx && wx.current, dy = wx && wx.daily, night = cur ? !cur.is_day : (d.getHours() < 7 || d.getHours() >= 19);
+  const [wDesc, wKind] = cur ? WMO(cur.weather_code) : ['Memuatkan cuaca…', 'cloud'];
+  let hours = '';
+  if(wx && wx.hourly && wx.hourly.time){
+    const key = ymd(d) + 'T' + pad(d.getHours()) + ':00';
+    const i0 = Math.max(0, wx.hourly.time.indexOf(key));
+    for(let i = i0; i < Math.min(i0 + 8, wx.hourly.time.length); i++){
+      const tm = wx.hourly.time[i], h = Number(tm.slice(11,13)), pr = (wx.hourly.precipitation_probability||[])[i] || 0;
+      hours += `<div class="hh ${i===i0?'now':''}"><span>${i===i0?'Kini':pad(h)+':00'}</span>${wxIcon(WMO(wx.hourly.weather_code[i])[1], h<7||h>=19)}<b>${Math.round(wx.hourly.temperature_2m[i])}°</b><em class="${pr>=50?'wet':''}">${pr}%</em></div>`;
+    }
+  }
+  const ns = nextSolat();
+  const sol = solat && solat.times ? SOLAT.map(([k, l]) => `<div class="ps ${ns && ns.k===k ? 'next' : ''} ${solat.times[k] && !(ns && ns.k===k) && solat.times[k] < pad(d.getHours())+':'+pad(d.getMinutes()) ? 'past' : ''}"><span>${l}</span><b>${esc(fmtT(solat.times[k]))}</b>${ns && ns.k===k ? `<em>dalam ${durTxt(ns.mins)}</em>` : ''}</div>`).join('') : '';
+  return `<section class="hud" aria-label="Papan pemuka">
+    <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
+    <div class="hud-core">
+      <svg viewBox="0 0 200 200" aria-hidden="true">
+        <circle class="r0" cx="100" cy="100" r="94"/>
+        <circle class="r1" cx="100" cy="100" r="86"/>
+        <circle class="r2 trk" cx="100" cy="100" r="76"/><circle class="r2" id="hud-day" cx="100" cy="100" r="76" ${ring(76, S.day)} transform="rotate(-90 100 100)"/>
+        <circle class="r3 trk" cx="100" cy="100" r="66"/><circle class="r3" cx="100" cy="100" r="66" ${ring(66, S.task)} transform="rotate(-90 100 100)"/>
+        <circle class="r4" cx="100" cy="100" r="57"/>
+      </svg>
+      <div class="hud-time"><b id="hud-clock">${pad(d.getHours())}:${pad(d.getMinutes())}</b><span>${HARI[d.getDay()]}, ${d.getDate()} ${BLS[d.getMonth()]}</span><small>${esc(hijri(d))}</small></div>
+    </div>
+    <div class="hud-wx">
+      <div class="hud-k"><span>${esc((wx && wx.label) || myLoc().label)} · cuaca</span><button type="button" class="hud-loc" data-act="hud-loc" title="Guna lokasi saya" aria-label="Guna lokasi saya"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button></div>
+      <div class="hud-now">${wxIcon(wKind, night)}<b>${cur ? Math.round(cur.temperature_2m) + '°' : '—'}</b><div><span>${esc(wDesc)}</span>${cur ? `<small>Terasa ${Math.round(cur.apparent_temperature)}° · Lembap ${cur.relative_humidity_2m}%</small>` : ''}</div></div>
+      ${dy && dy.temperature_2m_max ? `<div class="hud-kv"><span>Tinggi <b>${Math.round(dy.temperature_2m_max[0])}°</b></span><span>Rendah <b>${Math.round(dy.temperature_2m_min[0])}°</b></span><span>Hujan <b>${dy.precipitation_probability_max[0]}%</b></span><span>UV <b>${Math.round(dy.uv_index_max[0])}</b></span><span>Angin <b>${Math.round(cur.wind_speed_10m)}</b> km/j</span></div>` : ''}
+    </div>
+    ${hours ? `<div class="hud-hours">${hours}</div>` : ''}
+    <div class="hud-legend"><span><i class="lg day"></i>Hari ${Math.round(S.day*100)}%</span><span><i class="lg task"></i>Tugasan selesai ${S.done}/${S.total}</span></div>
+  </section>
+  <div class="hud-brief"><span class="pulse" aria-hidden="true"></span><p><b>${greet()}, Armay.</b> ${esc(hudBrief(agendaN, tkN))}.</p>
+    <div class="hud-acts"><button type="button" class="btn sm" data-act="hud-speak" aria-label="Bacakan taklimat">🔊 Dengar</button>${sample?`<button type="button" class="btn sm" data-act="summary" ${ui.summaryBusy?'disabled':''}>✨ Taklimat penuh</button>`:''}</div></div>
+  ${sol ? `<div class="hud-solat" aria-label="Waktu solat ${esc(solat.src||'')}">${sol}</div>` : ''}`;
+}
+function hudSpeak(){
+  if(!('speechSynthesis' in window)){ toast('Pelayar ini tak boleh bercakap.'); return; }
+  speechSynthesis.cancel();
+  const el = document.querySelector('.hud-brief p');
+  const txt = ui.summary ? ui.summary : (el ? el.textContent : '');
+  const u = new SpeechSynthesisUtterance(txt.replace(/[·•]/g, ',').replace(/(\d+)j (\d+)m/g, '$1 jam $2 minit'));
+  const vs = speechSynthesis.getVoices();
+  const v = vs.find(x => /^ms/i.test(x.lang)) || vs.find(x => /^id/i.test(x.lang));
+  if(v){ u.voice = v; u.lang = v.lang; } else u.lang = 'ms-MY';
+  u.rate = 1.02; speechSynthesis.speak(u);
+}
+function hudLoc(){
+  if(!navigator.geolocation){ toast('Lokasi tidak tersedia.'); return; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    try { localStorage.setItem('hy-loc', JSON.stringify({lat: Math.round(pos.coords.latitude*100)/100, lon: Math.round(pos.coords.longitude*100)/100, label: 'Lokasi anda'})); } catch(e){}
+    toast('Cuaca ikut lokasi anda.'); loadEnv(true);
+  }, () => toast('Kebenaran lokasi ditolak. Guna Klang.'), {timeout: 10000, maximumAge: 600000});
+}
+setInterval(() => {
+  const c = document.getElementById('hud-clock'); if(!c) return;
+  const d = new Date(); c.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const r = document.getElementById('hud-day'); if(r){ const C = 2*Math.PI*76; r.setAttribute('stroke-dasharray', `${(C*(d.getHours()*60+d.getMinutes())/1440).toFixed(1)} ${C.toFixed(1)}`); }
+}, 15000);
+
 function vToday(){
   const t = today(), now = Date.now();
   const ev = byKind('event').filter(i => i.date===t);
@@ -681,8 +797,8 @@ function vToday(){
   const quickHtml = `<div class="hy-quick">${quick.map(([v, n, l, hot]) => `<a class="hy-q ${n?'':'zero'} ${n&&hot?'hot':''}" href="#${v}" data-view="${v}"><b>${n}</b><span>${l}</span></a>`).join('')}</div>`;
   const P = (cond, title, body, extra) => cond ? panel(title, body, extra) : '';
   return `<div class="stack">
-    <div class="head"><div><h1>${greet()}.</h1><p>${agenda.length ? `${agenda.length} perkara dalam jadual hari ini` : 'Jadual hari ini masih kosong'}</p></div>
-      ${sample?`<button class="btn" data-act="summary" ${ui.summaryBusy?'disabled':''}>✨ Ringkaskan hari saya</button>`:''}</div>
+    <h1 class="sr-only">${greet()}</h1>
+    ${hudHtml(agenda.length, tk.length)}
     ${quickHtml}
     ${exN?`<div class="banner"><span>Ada ${exN} item contoh.</span><button class="btn sm" data-act="clear-ex">Padam semua contoh</button></div>`:''}
     ${sample && (ui.summary || ui.summaryBusy) ? sumBox : ''}
@@ -2205,6 +2321,8 @@ document.addEventListener('click', async ev => {
     savePdf(list, `baucar-bisnes-${ui.exp.month}.pdf`);
   }
   if(k==='exp-unattach'){ ui.exp.pending = null; render(); }
+  if(k==='hud-speak') hudSpeak();
+  if(k==='hud-loc') hudLoc();
   if(k==='voice'){ openVoice('', false); if(SR && !rec) micToggle(); }
   if(k==='vz-mic') micToggle();
   if(k==='vz-run') vzRun();
@@ -2326,7 +2444,7 @@ function setCapture(){
 }
 async function boot(){
   try { ui.navMore = localStorage.getItem('hy-navmore') === '1'; } catch(e){}
-  if(window.__standalone){ loadTeam(); setInterval(() => loadTeam(true), 5*60000); }
+  if(window.__standalone){ loadTeam(); setInterval(() => loadTeam(true), 5*60000); loadEnv(); setInterval(() => loadEnv(), 15*60000); }
   try { const sc = localStorage.getItem('pd-scope'); if(sc==='bisnes' || sc==='peribadi') ui.exp.newScope = sc; lastMethod = localStorage.getItem('pd-method') || ''; } catch(e){}
   const h = location.hash.slice(1); if(RENDER[h]) ui.view = h;
   render();
