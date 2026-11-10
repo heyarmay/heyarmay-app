@@ -682,7 +682,6 @@ function hudBrief(agendaN, tkN){
     const pr = (wx.hourly.precipitation_probability || []).slice(i0, i0 + 6), mx = Math.max(0, ...pr);
     if(mx >= 40){ const at = wx.hourly.time[i0 + pr.indexOf(mx)].slice(11, 16); parts.push(`peluang hujan ${mx}% sekitar ${fmtT(at)}`); }
   }
-  const ns = nextSolat(); if(ns) parts.push(`${ns.l} dalam ${durTxt(ns.mins)}`);
   return parts.join(' · ');
 }
 function hudHtml(agendaN, tkN){
@@ -701,35 +700,40 @@ function hudHtml(agendaN, tkN){
   }
   const ns = nextSolat();
   const sol = solat && solat.times ? SOLAT.map(([k, l]) => `<div class="ps ${ns && ns.k===k ? 'next' : ''} ${solat.times[k] && !(ns && ns.k===k) && solat.times[k] < pad(d.getHours())+':'+pad(d.getMinutes()) ? 'past' : ''}"><span>${l}</span><b>${esc(fmtT(solat.times[k]))}</b>${ns && ns.k===k ? `<em>dalam ${durTxt(ns.mins)}</em>` : ''}</div>`).join('') : '';
+  const kv = dy && dy.temperature_2m_max ? `Tinggi ${Math.round(dy.temperature_2m_max[0])}° · Rendah ${Math.round(dy.temperature_2m_min[0])}° · Hujan ${dy.precipitation_probability_max[0]}%` : '';
+  const wide = window.matchMedia && matchMedia('(min-width: 821px)').matches;
+  const openMore = ui.hudMore != null ? ui.hudMore : wide;
   return `<section class="hud" aria-label="Papan pemuka">
     <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
-    <div class="hud-core">
+    <div class="hud-core" title="Cincin cyan: ${Math.round(S.day*100)}% hari berlalu · Cincin ungu: ${S.done}/${S.total} tugasan selesai">
       <svg viewBox="0 0 200 200" aria-hidden="true">
         <circle class="r0" cx="100" cy="100" r="94"/>
         <circle class="r1" cx="100" cy="100" r="86"/>
         <circle class="r2 trk" cx="100" cy="100" r="76"/><circle class="r2" id="hud-day" cx="100" cy="100" r="76" ${ring(76, S.day)} transform="rotate(-90 100 100)"/>
         <circle class="r3 trk" cx="100" cy="100" r="66"/><circle class="r3" cx="100" cy="100" r="66" ${ring(66, S.task)} transform="rotate(-90 100 100)"/>
-        <circle class="r4" cx="100" cy="100" r="57"/>
       </svg>
-      <div class="hud-time"><b id="hud-clock">${pad(d.getHours())}:${pad(d.getMinutes())}</b><span>${HARI[d.getDay()]}, ${d.getDate()} ${BLS[d.getMonth()]}</span><small>${esc(hijri(d))}</small></div>
+      <div class="hud-time"><b id="hud-clock">${pad(d.getHours())}:${pad(d.getMinutes())}</b><span>${HARI[d.getDay()]}, ${d.getDate()} ${BLS[d.getMonth()]}</span></div>
     </div>
     <div class="hud-wx">
-      <div class="hud-k"><span>${esc((wx && wx.label) || myLoc().label)} · cuaca</span><button type="button" class="hud-loc" data-act="hud-loc" title="Guna lokasi saya" aria-label="Guna lokasi saya"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button></div>
-      <div class="hud-now">${wxIcon(wKind, night)}<b>${cur ? Math.round(cur.temperature_2m) + '°' : '—'}</b><div><span>${esc(wDesc)}</span>${cur ? `<small>Terasa ${Math.round(cur.apparent_temperature)}° · Lembap ${cur.relative_humidity_2m}%</small>` : ''}</div></div>
-      ${dy && dy.temperature_2m_max ? `<div class="hud-kv"><span>Tinggi <b>${Math.round(dy.temperature_2m_max[0])}°</b></span><span>Rendah <b>${Math.round(dy.temperature_2m_min[0])}°</b></span><span>Hujan <b>${dy.precipitation_probability_max[0]}%</b></span><span>UV <b>${Math.round(dy.uv_index_max[0])}</b></span><span>Angin <b>${Math.round(cur.wind_speed_10m)}</b> km/j</span></div>` : ''}
+      <div class="hud-k"><span>${esc((wx && wx.label) || myLoc().label)}</span><button type="button" class="hud-loc" data-act="hud-loc" title="Guna lokasi saya" aria-label="Guna lokasi saya"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button></div>
+      <div class="hud-now">${wxIcon(wKind, night)}<b>${cur ? Math.round(cur.temperature_2m) + '°' : '—'}</b></div>
+      <div class="hud-desc">${esc(wDesc)}</div>
+      ${kv ? `<div class="hud-sub">${kv}</div>` : ''}
     </div>
-    ${hours ? `<div class="hud-hours">${hours}</div>` : ''}
-    <div class="hud-legend"><span><i class="lg day"></i>Hari ${Math.round(S.day*100)}%</span><span><i class="lg task"></i>Tugasan selesai ${S.done}/${S.total}</span></div>
-  </section>
-  <div class="hud-brief"><span class="pulse" aria-hidden="true"></span><p><b>${greet()}, Armay.</b> ${esc(hudBrief(agendaN, tkN))}.</p>
-    <div class="hud-acts"><button type="button" class="btn sm" data-act="hud-speak" aria-label="Bacakan taklimat">🔊 Dengar</button>${sample?`<button type="button" class="btn sm" data-act="summary" ${ui.summaryBusy?'disabled':''}>✨ Taklimat penuh</button>`:''}</div></div>
-  ${sol ? `<div class="hud-solat" aria-label="Waktu solat ${esc(solat.src||'')}">${sol}</div>` : ''}`;
+    <div class="hud-line"><p><b>${greet()}, Armay.</b> ${esc(hudBrief(agendaN, tkN))}.</p>
+      <div class="hud-acts"><button type="button" class="ib" data-act="hud-speak" aria-label="Dengar taklimat" title="Dengar taklimat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg></button>${sample?`<button type="button" class="ib" data-act="summary" ${ui.summaryBusy?'disabled':''} aria-label="Taklimat penuh daripada Claude" title="Taklimat penuh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></button>`:''}</div></div>
+    ${(hours || sol) ? `<div class="hud-more ${openMore?'open':''}">
+      <button type="button" class="hud-more-t" data-act="hud-more" aria-expanded="${openMore}"><span>${ns ? `<b>${esc(ns.l)} ${esc(fmtT(ns.at))}</b> · dalam ${durTxt(ns.mins)}` : 'Ramalan & waktu solat'}</span><em>${openMore ? 'Sorok' : 'Ramalan & solat'}</em><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+      ${openMore ? `${hours ? `<div class="hud-hours">${hours}</div>` : ''}${sol ? `<div class="hud-solat" aria-label="Waktu solat ${esc(solat.src||'')}">${sol}</div>` : ''}` : ''}
+    </div>` : ''}
+  </section>`;
 }
 function hudSpeak(){
   if(!('speechSynthesis' in window)){ toast('Pelayar ini tak boleh bercakap.'); return; }
   speechSynthesis.cancel();
-  const el = document.querySelector('.hud-brief p');
-  const txt = ui.summary ? ui.summary : (el ? el.textContent : '');
+  const el = document.querySelector('.hud-line p');
+  const ns = nextSolat();
+  const txt = ui.summary ? ui.summary : ((el ? el.textContent : '') + (ns ? ` Waktu ${ns.l} dalam ${durTxt(ns.mins)}.` : ''));
   const u = new SpeechSynthesisUtterance(txt.replace(/[·•]/g, ',').replace(/(\d+)j (\d+)m/g, '$1 jam $2 minit'));
   const vs = speechSynthesis.getVoices();
   const v = vs.find(x => /^ms/i.test(x.lang)) || vs.find(x => /^id/i.test(x.lang));
@@ -789,11 +793,11 @@ function vToday(){
   const moneyHtml = spendRow + (owed.length?`<div class="row" data-view="bayaran"><div class="rt"><span class="t">Belum dibayar klien</span><span class="meta"><span>${owed.length} invois</span>${owed.some(i=>i.due&&i.due<t)?'<span class="chip late">ada yang lewat</span>':''}</span></div><span class="amt">${money(owedSum)}</span></div>`:'') + bills.map(rowBill).join('');
 
   const quick = [
-    ['tugasan', tk.length, 'tugasan perlu dibuat', tk.some(i => i.due && i.due < t)],
-    ['menunggu', chase.length, 'perlu dikejar', false],
-    ['peringatan', missed.length, 'peringatan terlepas', true],
-    ['bayaran', owed.length, 'belum dibayar klien', owed.some(i => i.due && i.due < t)],
-    ...(team.connected ? [['team', teamShoots(t).length, 'job team hari ini', false]] : [])
+    ['tugasan', tk.length, 'Tugasan', tk.some(i => i.due && i.due < t)],
+    ['menunggu', chase.length, 'Kejar', false],
+    ['peringatan', missed.length, 'Terlepas', true],
+    ['bayaran', owed.length, 'Belum bayar', owed.some(i => i.due && i.due < t)],
+    ...(team.connected ? [['team', teamShoots(t).length, 'Job team', false]] : [])
   ];
   const quickHtml = `<div class="hy-quick">${quick.map(([v, n, l, hot]) => `<a class="hy-q ${n?'':'zero'} ${n&&hot?'hot':''}" href="#${v}" data-view="${v}"><b>${n}</b><span>${l}</span></a>`).join('')}</div>`;
   const P = (cond, title, body, extra) => cond ? panel(title, body, extra) : '';
@@ -2406,6 +2410,7 @@ document.addEventListener('click', async ev => {
   }
   if(k==='exp-unattach'){ ui.exp.pending = null; render(); }
   if(k==='hud-speak') hudSpeak();
+  if(k==='hud-more'){ const wide = matchMedia('(min-width: 821px)').matches; ui.hudMore = !(ui.hudMore != null ? ui.hudMore : wide); render(); return; }
   if(k==='hud-loc') hudLoc();
   if(k==='voice'){ openVoice('', false); if(SR && !rec) micToggle(); }
   if(k==='vz-mic') micToggle();
