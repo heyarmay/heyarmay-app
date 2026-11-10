@@ -162,7 +162,7 @@ async function askClaude(env, {input, json, tier, images, maxTokens}){
   if(!env.ANTHROPIC_API_KEY) return {error: 'no_key', status: 503};
   const n = await countUsage(env);
   if(n > DAILY_CLAUDE_LIMIT) return {error: 'daily_limit', status: 429};
-  const imgBlocks = (images || []).slice(0, 4)
+  const imgBlocks = (images || []).slice(0, 6)
     .filter(im => im && typeof im.data === 'string' && /^image\/(jpeg|png|webp|gif)$/.test(im.media_type))
     .map(im => ({type: 'image', source: {type: 'base64', media_type: im.media_type, data: im.data}}));
   let messages;

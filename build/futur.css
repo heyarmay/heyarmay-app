@@ -287,6 +287,11 @@ select option{background:var(--solid);color:var(--ink)}
 .vz-pic img{max-width:min(100%,320px);max-height:240px;border-radius:12px;border:1px solid var(--line);object-fit:contain;background:var(--field)}
 .ed-img{max-width:100%;max-height:320px;border-radius:12px;border:1px solid var(--line);object-fit:contain;align-self:flex-start}
 #cap-pic{cursor:pointer}
+.vz-pics{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+.vz-pics figure{position:relative;margin:0;width:84px;height:84px;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--field)}
+.vz-pics img{width:100%;height:100%;object-fit:cover;display:block}
+.vz-pics figcaption{position:absolute;left:4px;bottom:4px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:rgba(0,0,0,.6);color:#fff;font:600 .7rem/20px var(--f-body);text-align:center}
+.vz-pics figure button{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:15px;line-height:1;cursor:pointer;padding:0}
 label.btn{cursor:pointer}
 
 /* ---------- HUD "Jarvis" ---------- */

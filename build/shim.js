@@ -72,7 +72,7 @@
     const body = {input, json:!!asJson, tier: opts.modelTier || 'default'};
     if(opts.images){
       const list = opts.images instanceof Blob ? [opts.images] : Array.from(opts.images);
-      body.images = await Promise.all(list.slice(0, 4).map(toB64));
+      body.images = await Promise.all(list.slice(0, 6).map(toB64));
     }
     let r;
     try { r = await fetch('/api/claude', Object.assign(json('POST', body), {signal: opts.signal, credentials:'same-origin'})); }
@@ -93,7 +93,7 @@
     if(v === undefined) throw {code:'invalid_json', message:'Jawapan bukan JSON', text:r.text};
     return v;
   };
-  sample.limits = async () => ({maxPromptBytes:262144, images:{maxCount:4, maxInputBytes:20e6, mediaTypes:['image/jpeg','image/png','image/webp','image/gif']}, tools:null});
+  sample.limits = async () => ({maxPromptBytes:262144, images:{maxCount:6, maxInputBytes:20e6, mediaTypes:['image/jpeg','image/png','image/webp','image/gif']}, tools:null});
 
   /* ---------- assets (gambar resit) ---------- */
   const assets = {

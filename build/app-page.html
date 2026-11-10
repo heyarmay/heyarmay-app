@@ -297,7 +297,7 @@ a.row{color:inherit;text-decoration:none}
       <form class="capture" id="capture" autocomplete="off">
         <input id="cap-in" placeholder="Tulis apa sahaja… cth: esok 3 petang jumpa klien kedai kopi SS2" aria-label="Tangkap cepat">
         <button type="button" class="btn" id="cap-voice" data-act="voice" aria-label="Cakap dan susun" title="Cakap & susun"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></button>
-        <label class="btn" id="cap-pic" title="Gambar atau tangkapan skrin" aria-label="Tambah gambar atau tangkapan skrin"><input type="file" id="pic-file" accept="image/*" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg></label>
+        <label class="btn" id="cap-pic" title="Gambar atau tangkapan skrin" aria-label="Tambah gambar atau tangkapan skrin"><input type="file" id="pic-file" accept="image/*" multiple hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg></label>
         <select id="cap-kind" aria-label="Jenis">
           <option value="auto">Auto (Claude)</option>
           <option value="task">Tugasan</option>
@@ -1883,7 +1883,7 @@ function openEditor(i){
   const m = $('#modal');
   m.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="Ubah ${label}">
     <div style="display:flex;justify-content:space-between;align-items:center"><h2>${label}</h2><button class="btn ghost sm" data-act="close">Tutup</button></div>
-    ${i.imgId ? `<img class="ed-img" src="/_blob/${esc(i.imgId)}" alt="Gambar asal" loading="lazy">` : ''}
+    ${[i.imgId, ...(Array.isArray(i.imgIds) ? i.imgIds : [])].filter(Boolean).map((id, n) => `<img class="ed-img" src="/_blob/${esc(id)}" alt="Gambar asal ${n+1}" loading="lazy">`).join('')}
     <div class="fields">${fields.map(f => fieldHtml(f, i[f[0]])).join('')}</div>
     ${i.kind==='event'&&i.date?`<a class="btn sm" style="align-self:flex-start" href="${esc(gcalLink(i))}" target="_blank" rel="noopener">Tambah ke Google Calendar</a>`:''}
     ${i.kind==='person'?'<div class="small muted">Tahun lahir tidak penting untuk peringatan; pilih mana-mana tahun jika tidak tahu.</div>':''}
@@ -1929,7 +1929,7 @@ function renderVoice(){
   const res = !V.res ? '' : `<div class="stack" style="gap:10px">
     ${V.summary ? `<div class="summary">${esc(V.summary)}</div>` : ''}
     <h3>Akan ditambah</h3>
-    <div class="meetres">${V.res.length ? V.res.map((a,ix) => `<label><input type="checkbox" data-vz="${ix}" ${a.on?'checked':''}><span><span class="chip ${VKIND[a.kind][1]}">${VKIND[a.kind][0]}</span> ${esc(a.title || a.note || '')}${voiceWhen(a) ? ` <span class="muted small">· ${esc(voiceWhen(a))}</span>` : ''}</span></label>`).join('')
+    <div class="meetres">${V.res.length ? V.res.map((a,ix) => `<label><input type="checkbox" data-vz="${ix}" ${a.on?'checked':''}><span><span class="chip ${VKIND[a.kind][1]}">${VKIND[a.kind][0]}</span>${a._img ? ` <span class="chip">📷 ${a._img}</span>` : ''} ${esc(a.title || a.note || '')}${voiceWhen(a) ? ` <span class="muted small">· ${esc(voiceWhen(a))}</span>` : ''}</span></label>`).join('')
       : empty('Tiada perkara yang jelas untuk ditambah. Cuba sebut apa perlu dibuat, bila, atau berapa ringgit.')}</div>
     <label class="inline small"><input type="checkbox" id="vz-keep" ${V.keep?'checked':''}> Simpan ringkasan dan teks asal sebagai nota</label>
     <div class="inline"><button class="btn pri" data-act="vz-add">Tambah yang ditanda</button><span class="small muted">Anda boleh ubah setiap item selepas ini.</span></div></div>`;
@@ -1937,28 +1937,41 @@ function renderVoice(){
     <div style="display:flex;justify-content:space-between;align-items:center"><h2>Cakap & susun</h2><button class="btn ghost sm" data-act="close">Tutup</button></div>
     <p class="small muted" style="margin:0">${SR ? 'Tekan <b>Rakam suara</b> dan cakap semua sekali, kemudian tekan Berhenti.' : 'Tekan ikon mikrofon pada papan kekunci telefon, kemudian cakap semua sekali.'} Claude akan ringkaskan dan asingkan jadi tugasan, peringatan, acara, belanja, perkara yang ditunggu, idea atau nota.</p>
     <div class="inline">${SR ? `<button class="btn ${rec ? 'danger arm' : 'pri'}" data-act="vz-mic">${rec ? 'Berhenti merakam' : 'Rakam suara'}</button>` : ''}
-      ${canImg ? `<label class="btn"><input type="file" id="pic-file2" accept="image/*" hidden>📷 ${V.img ? 'Tukar gambar' : 'Gambar / screenshot'}</label>` : ''}${rec ? '<span class="small muted">Sedang mendengar…</span>' : ''}</div>
-    ${V.imgUrl ? `<div class="vz-pic"><img src="${V.imgUrl}" alt="Gambar dilampirkan"><button type="button" class="btn ghost sm" data-act="vz-unpic">Buang gambar</button></div>` : ''}
+      ${canImg && (V.imgs||[]).length < MAX_PICS ? `<label class="btn"><input type="file" id="pic-file2" accept="image/*" multiple hidden>📷 ${(V.imgs||[]).length ? 'Tambah gambar' : 'Gambar / screenshot'}</label>` : ''}${rec ? '<span class="small muted">Sedang mendengar…</span>' : ''}</div>
+    ${(V.imgs||[]).length ? `<div class="vz-pics">${V.imgs.map((x, i) => `<figure><img src="${x.url}" alt="Gambar ${i+1}"><figcaption>${i+1}</figcaption><button type="button" data-act="vz-unpic" data-ix="${i}" aria-label="Buang gambar ${i+1}">×</button></figure>`).join('')}<span class="small muted">${V.imgs.length}/${MAX_PICS} gambar</span></div>` : ''}
     <textarea class="f" id="vz-text" rows="6" placeholder="cth: Esok pukul 10 pagi jumpa klien kafe di Bangsar, bawa sebut harga. Tadi isi minyak 60 ringgit. Tunggu Faiz hantar video review Jumaat ni. Ingatkan aku bayar bil air hari Sabtu.">${esc(V.text)}</textarea>
     <div class="inline"><button class="btn ${V.res?'':'pri'}" data-act="vz-run" ${V.busy?'disabled':''}>${V.busy ? 'Claude sedang menyusun…' : V.res ? 'Susun semula' : 'Susun dengan Claude'}</button>${V.res||V.text ? '<button class="btn ghost" data-act="vz-clear">Kosongkan</button>' : ''}</div>
     ${res}</div>`;
   m.hidden = false;
-  if(!V.res && !V.busy && !V.img){ const t = m.querySelector('#vz-text'); if(t) t.focus(); }
+  if(!V.res && !V.busy && !(V.imgs||[]).length){ const t = m.querySelector('#vz-text'); if(t) t.focus(); }
 }
-async function openPic(file){
-  if(!file) return;
+const MAX_PICS = 6;
+async function openPic(files){
+  files = (Array.isArray(files) ? files : [files]).filter(Boolean);
+  if(!files.length) return;
   if(!sample){ toast('Bantuan Claude tidak tersedia dalam paparan ini.'); return; }
   document.body.classList.remove('hy-cap');
-  const img = await shrinkImage(file);
-  const V = ui.voice; if(V.imgUrl) try { URL.revokeObjectURL(V.imgUrl); } catch(e){}
+  const V = ui.voice;
   const tx = document.getElementById('vz-text'); if(tx) V.text = tx.value;
+  const keep = V.open ? (V.imgs || []) : [];
+  if(!V.open) (V.imgs || []).forEach(x => { try { URL.revokeObjectURL(x.url); } catch(e){} });
+  const room = MAX_PICS - keep.length;
+  if(files.length > room) toast(`Maksimum ${MAX_PICS} gambar sekali gus. ${Math.max(0, room)} gambar pertama diambil.`);
+  const added = [];
+  for(const f of files.slice(0, Math.max(0, room))){ const blob = await shrinkImage(f); added.push({blob, url: URL.createObjectURL(blob)}); }
   const cap = document.getElementById('cap-in');
   const extra = !V.open && cap && cap.value.trim() ? cap.value.trim() : '';
   if(extra) cap.value = '';
-  ui.voice = {...V, img, imgUrl: URL.createObjectURL(img), res:null, summary:'', text: V.open ? V.text : extra};
+  ui.voice = {...V, imgs: [...keep, ...added], res:null, summary:'', text: V.open ? V.text : extra};
   openVoice('', true);
 }
-function dropPic(){ const V = ui.voice; if(V.imgUrl) try { URL.revokeObjectURL(V.imgUrl); } catch(e){} V.img = null; V.imgUrl = ''; V.res = null; renderVoice(); }
+function dropPic(ix){
+  const V = ui.voice, arr = V.imgs || [];
+  const gone = ix == null ? arr : arr.filter((_, i) => i === ix);
+  gone.forEach(x => { try { URL.revokeObjectURL(x.url); } catch(e){} });
+  V.imgs = ix == null ? [] : arr.filter((_, i) => i !== ix);
+  V.res = null; renderVoice();
+}
 function openVoice(text, run){
   editing = null;
   if(text) ui.voice = {...ui.voice, text, res:null, summary:''};
@@ -1970,7 +1983,8 @@ async function vzRun(){
   const V = ui.voice, el = document.getElementById('vz-text');
   if(el) V.text = el.value;
   if(!sample){ toast('Bantuan Claude tidak tersedia dalam paparan ini.'); return; }
-  if(!V.text.trim() && !V.img){ toast('Cakap, tulis atau pilih gambar dahulu.'); return; }
+  const pics = (V.imgs || []).map(x => x.blob);
+  if(!V.text.trim() && !pics.length){ toast('Cakap, tulis atau pilih gambar dahulu.'); return; }
   V.busy = true; V.res = null; V.summary = ''; renderVoice();
   try {
     const r = await sample.json(
@@ -1989,14 +2003,15 @@ Tugas:
 Tajuk ringkas dan jelas dalam bahasa pengguna. Jangan reka tarikh, masa, nama atau jumlah yang tidak disebut. Balas JSON sahaja:
 {"summary":"...","items":[{"kind":"task","title":"...","due":null,"priority":"biasa"}]}
 
-${V.img ? `Pengguna juga melampirkan SATU gambar: mungkin tangkapan skrin (WhatsApp, emel, kalendar, mesej klien), poster atau jemputan acara, resit atau invois, jadual, atau nota tulisan tangan. Baca SEMUA maklumat penting dalam gambar (tarikh, masa, tempat, nama, jumlah RM) dan jadikan item yang sesuai, digabungkan dengan teks pengguna jika ada. Resit atau bukti bayaran yang sudah dibayar = "expense" (note = nama kedai + apa dibeli). Invois atau bil yang belum dibayar = "task" (title "Bayar ..." dengan due). Jemputan atau poster = "event". Jika gambar hanya maklumat, simpan sebagai "note" dengan body ringkasan isi gambar.
+${pics.length ? `Pengguna juga melampirkan ${pics.length} gambar (bernombor 1 hingga ${pics.length} ikut susunan): mungkin tangkapan skrin (WhatsApp, emel, kalendar, mesej klien), poster atau jemputan acara, resit atau invois, jadual, atau nota tulisan tangan. Baca SEMUA maklumat penting dalam gambar (tarikh, masa, tempat, nama, jumlah RM) dan jadikan item yang sesuai, digabungkan dengan teks pengguna jika ada. Resit atau bukti bayaran yang sudah dibayar = "expense" (note = nama kedai + apa dibeli). Invois atau bil yang belum dibayar = "task" (title "Bayar ..." dengan due). Jemputan atau poster = "event". Jika gambar hanya maklumat, simpan sebagai "note" dengan body ringkasan isi gambar. Baca SETIAP gambar; satu gambar boleh menghasilkan beberapa item. Untuk setiap item yang datang dari gambar, tambah medan "img": nombor gambar sumbernya.
 ` : ''}
 Teks:
-${V.text.slice(0,15000) || (V.img ? '(tiada teks, rujuk gambar)' : '')}`, V.img ? {cache:false, images:[V.img]} : {cache:false});
+${V.text.slice(0,15000) || (pics.length ? '(tiada teks, rujuk gambar)' : '')}`, pics.length ? {cache:false, images:pics} : {cache:false});
     V.summary = String(r && r.summary || '');
     V.res = (r && Array.isArray(r.items) ? r.items : []).map(a => {
-      if(a && a.kind==='note') return {kind:'note', title:String(a.title||'Nota').slice(0,80), body:String(a.body||a.title||''), pinned:false, updated:Date.now()};
-      return cleanItem(a, '');
+      const it = a && a.kind==='note' ? {kind:'note', title:String(a.title||'Nota').slice(0,80), body:String(a.body||a.title||''), pinned:false, updated:Date.now()} : cleanItem(a, '');
+      if(it && a && Number.isInteger(Number(a.img)) && Number(a.img) >= 1 && Number(a.img) <= pics.length) it._img = Number(a.img);
+      return it;
     }).filter(a => a && (a.title || a.kind==='expense')).map(a => ({...a, on:true}));
   } catch(e){ sampleErr(e); }
   V.busy = false;
@@ -2005,21 +2020,23 @@ ${V.text.slice(0,15000) || (V.img ? '(tiada teks, rujuk gambar)' : '')}`, V.img 
 async function vzAdd(){
   const V = ui.voice; if(!V.res) return;
   const k = document.getElementById('vz-keep'); if(k) V.keep = k.checked;
-  let n = 0, imgId = '';
-  const chosen = V.res.filter(x => x.on);
-  if(V.img && assets && (V.keep || chosen.some(a => a.kind==='expense' || a.kind==='note'))){
-    try { const up = await assets.upload(V.img, {type: V.img.type==='image/png' ? 'image/png' : 'image/jpeg'}); imgId = up.id; } catch(e){}
-  }
-  for(const a of chosen){ const {on, ...data} = a;
-    if(imgId && data.kind==='expense') data.receiptId = imgId;
-    if(imgId && data.kind==='note') data.imgId = imgId;
+  let n = 0;
+  const chosen = V.res.filter(x => x.on), imgs = V.imgs || [], ids = [];
+  const upId = async ix => { if(ids[ix] !== undefined) return ids[ix]; ids[ix] = '';
+    if(assets && imgs[ix]) try { const b = imgs[ix].blob; ids[ix] = (await assets.upload(b, {type: b.type==='image/png' ? 'image/png' : 'image/jpeg'})).id; } catch(e){}
+    return ids[ix]; };
+  for(const a of chosen){ const {on, _img, ...data} = a;
+    const ix = _img ? _img - 1 : (imgs.length === 1 ? 0 : -1);
+    if(ix >= 0 && (data.kind==='expense' || data.kind==='note')){ const id = await upId(ix); if(id){ if(data.kind==='expense') data.receiptId = id; else data.imgId = id; } }
     if(await addItem(data)) n++; }
-  if(V.keep && (V.text.trim() || imgId)){
+  let imgIds = [];
+  if(V.keep && imgs.length){ for(let i = 0; i < imgs.length; i++){ const id = await upId(i); if(id) imgIds.push(id); } }
+  if(V.keep && (V.text.trim() || imgIds.length)){
     const d = new Date();
-    await addItem({kind:'note', title:`${V.img ? 'Catatan gambar' : 'Catatan suara'} ${fmtD(today())}, ${fmtT(pad(d.getHours())+':'+pad(d.getMinutes()))}`, body:(V.summary ? V.summary + (V.text ? '\n\n---\n\n' : '') : '') + V.text, pinned:false, updated:Date.now(), ...(imgId ? {imgId} : {})});
+    await addItem({kind:'note', title:`${imgs.length ? 'Catatan gambar' : 'Catatan suara'} ${fmtD(today())}, ${fmtT(pad(d.getHours())+':'+pad(d.getMinutes()))}`, body:(V.summary ? V.summary + (V.text ? '\n\n---\n\n' : '') : '') + V.text, pinned:false, updated:Date.now(), ...(imgIds.length ? {imgIds} : {})});
   }
-  if(V.imgUrl) try { URL.revokeObjectURL(V.imgUrl); } catch(e){}
-  ui.voice = {text:'', busy:false, res:null, summary:'', keep:V.keep, open:false, img:null, imgUrl:''};
+  imgs.forEach(x => { try { URL.revokeObjectURL(x.url); } catch(e){} });
+  ui.voice = {text:'', busy:false, res:null, summary:'', keep:V.keep, open:false, imgs:[]};
   closeEditor();
   toast(n ? `${n} item ditambah ke sistem` : 'Catatan disimpan');
 }
@@ -2353,7 +2370,7 @@ document.addEventListener('click', async ev => {
   if(k==='hud-loc') hudLoc();
   if(k==='voice'){ openVoice('', false); if(SR && !rec) micToggle(); }
   if(k==='vz-mic') micToggle();
-  if(k==='vz-unpic') dropPic();
+  if(k==='vz-unpic') dropPic(act.dataset.ix != null ? Number(act.dataset.ix) : null);
   if(k==='vz-run') vzRun();
   if(k==='vz-add') vzAdd();
   if(k==='vz-clear'){ ui.voice = {...ui.voice, text:'', res:null, summary:''}; renderVoice(); }
@@ -2385,7 +2402,7 @@ document.addEventListener('change', ev => {
   if(T.id==='ml-tone') ui.mail.tone = T.value;
   if(T.matches('[data-goal]')) updItem(T.dataset.goal, {progress:Number(T.value)});
   if(T.id==='ex-file' && T.files && T.files[0]) scanReceipt(T.files[0]);
-  if((T.id==='pic-file' || T.id==='pic-file2') && T.files && T.files[0]){ const f = T.files[0]; T.value = ''; openPic(f); }
+  if((T.id==='pic-file' || T.id==='pic-file2') && T.files && T.files.length){ const fs = Array.from(T.files); T.value = ''; openPic(fs); }
 });
 document.addEventListener('submit', async ev => {
   ev.preventDefault();
