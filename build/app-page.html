@@ -721,7 +721,7 @@ function hudHtml(agendaN, tkN){
       <div class="hud-desc">${esc(wDesc)}</div>
       ${kv ? `<div class="hud-sub">${kv}</div>` : ''}
     </div>
-    <div class="hud-line"><p><b>${greet()}, Armay.</b> ${esc(hudBrief(agendaN, tkN))}.</p>
+    <div class="hud-line"><p><b>${greet()}, Amir.</b> ${esc(hudBrief(agendaN, tkN))}.</p>
       <div class="hud-acts"><button type="button" class="ib" data-act="hud-speak" aria-label="Dengar taklimat" title="Dengar taklimat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg></button>${sample?`<button type="button" class="ib" data-act="summary" ${ui.summaryBusy?'disabled':''} aria-label="Taklimat penuh daripada Claude" title="Taklimat penuh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></button>`:''}</div></div>
     ${(hours || sol) ? `<div class="hud-more ${openMore?'open':''}">
       <button type="button" class="hud-more-t" data-act="hud-more" aria-expanded="${openMore}"><span>${ns ? `<b>${esc(ns.l)} ${esc(fmtT(ns.at))}</b> · dalam ${durTxt(ns.mins)}` : 'Ramalan & waktu solat'}</span><em>${openMore ? 'Sorok' : 'Ramalan & solat'}</em><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
