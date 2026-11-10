@@ -11,5 +11,6 @@
     { "binding": "ARMEDIA_DB", "database_name": "armedia-db", "database_id": "4caa9de2-419f-4e16-908a-42bac7668ebb" }
   ],
   "vars": { "ALLOWED_EMAIL": "armayclaude@gmail.com" },
+  "triggers": { "crons": ["0 0 * * *"] },
   "observability": { "enabled": true }
 }

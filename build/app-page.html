@@ -792,6 +792,37 @@ function dxHud(){
   </section>`;
 }
 
+/* ---------- Notifikasi pagi 8:00 (Web Push) ---------- */
+const pushOk = () => window.__standalone && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const u8 = s => { s = String(s).replace(/-/g, '+').replace(/_/g, '/'); while(s.length % 4) s += '='; return Uint8Array.from(atob(s), c => c.charCodeAt(0)); };
+async function pushInit(){
+  if(!pushOk()){ ui.push = 'unsupported'; return; }
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    const sub = await reg.pushManager.getSubscription();
+    if(Notification.permission === 'denied') ui.push = 'denied';
+    else if(sub){ ui.push = 'on'; fetch('/api/push/sub', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(sub)}).catch(() => {}); }
+    else ui.push = 'off';
+  } catch(e){ ui.push = 'unsupported'; }
+  if(ui.view === 'hari-ini') render();
+}
+async function pushOn(){
+  if(!pushOk()){ toast("This browser can't receive notifications."); return; }
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready;
+    const perm = await Notification.requestPermission();
+    if(perm !== 'granted'){ ui.push = perm === 'denied' ? 'denied' : 'off'; render(); toast(perm === 'denied' ? 'Notifications are blocked. Allow them for heyarmay.com in your browser settings.' : 'Notifications were not allowed.'); return; }
+    const {key} = await (await fetch('/api/push/key', {cache:'no-store'})).json();
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub) sub = await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: u8(key)});
+    const r = await fetch('/api/push/sub', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(sub)});
+    if(!r.ok) throw new Error('sub');
+    ui.push = 'on'; render();
+    toast("Done. You'll get today's plan at 8:00 am every morning. Sending a preview now.");
+    fetch('/api/push/test', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({endpoint: sub.endpoint})}).catch(() => {});
+  } catch(e){ toast("Couldn't turn on notifications. Try again."); }
+}
+
 function vToday(){
   const t = today(), d = new Date(), nowHM = pad(d.getHours())+':'+pad(d.getMinutes());
   const ev = byKind('event').filter(i => i.date===t);
@@ -895,6 +926,7 @@ function vToday(){
       ${dxHud()}
       ${brief}
       ${tilesHtml}
+      ${ui.push === 'off' && !ui.pushHide ? `<div class="dx-card dx-push"><span class="dx-ic ring">${DXI('bell')}</span><div><b>Get today's plan at 8:00 am</b><span>A notification on this phone every morning with your schedule, tasks and weather.</span></div><div class="dx-pb"><button class="btn pri sm" data-act="push-on">Turn on</button><button class="btn ghost sm" data-act="push-hide" aria-label="Not now">Not now</button></div></div>` : ''}
       ${exN?`<div class="banner"><span>There are ${exN} sample items.</span><button class="btn sm" data-act="clear-ex">Delete all samples</button></div>`:''}
       ${sample ? sumBox : ''}
       ${focus}
@@ -2590,6 +2622,8 @@ document.addEventListener('click', async ev => {
     for(const id of ex) await delItem(id);
     toast('Sample items deleted');
   }
+  if(k==='push-on'){ pushOn(); return; }
+  if(k==='push-hide'){ ui.pushHide = true; try { localStorage.setItem('hy-push-hide', '1'); } catch(e){} render(); return; }
   if(k==='cap-as'){ const sel = $('#cap-kind'), inp = $('#cap-in'); if(sel) sel.value = act.dataset.kind;
     if(inp){ inp.placeholder = act.dataset.kind==='expense' ? 'e.g. 12.50 nasi lemak' : 'e.g. send client invoice tomorrow'; }
     if(matchMedia('(max-width: 820px)').matches) document.body.classList.add('hy-cap'); else window.scrollTo({top:0, behavior:'smooth'});
@@ -2752,7 +2786,8 @@ function setCapture(){
   render();
 }
 async function boot(){
-  try { ui.navMore = localStorage.getItem('hy-navmore') === '1'; } catch(e){}
+  try { ui.navMore = localStorage.getItem('hy-navmore') === '1'; ui.pushHide = localStorage.getItem('hy-push-hide') === '1'; } catch(e){}
+  pushInit();
   if(window.__standalone){ loadTeam(); setInterval(() => loadTeam(true), 5*60000); loadEnv(); setInterval(() => loadEnv(), 15*60000); }
   try { const sc = localStorage.getItem('pd-scope'); if(sc==='bisnes' || sc==='peribadi') ui.exp.newScope = sc; lastMethod = localStorage.getItem('pd-method') || ''; } catch(e){}
   const h = location.hash.slice(1); if(RENDER[h]) ui.view = h;

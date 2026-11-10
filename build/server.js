@@ -19,7 +19,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS sessions (h TEXT PRIMARY KEY, created INTEGER NOT NULL, expires INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS fails (ip TEXT PRIMARY KEY, n INTEGER NOT NULL, until INTEGER NOT NULL)`,
-  `CREATE TABLE IF NOT EXISTS ai_usage (day TEXT NOT NULL, model TEXT NOT NULL, calls INTEGER NOT NULL, inp INTEGER NOT NULL, outp INTEGER NOT NULL, usd REAL NOT NULL, PRIMARY KEY (day, model))`
+  `CREATE TABLE IF NOT EXISTS ai_usage (day TEXT NOT NULL, model TEXT NOT NULL, calls INTEGER NOT NULL, inp INTEGER NOT NULL, outp INTEGER NOT NULL, usd REAL NOT NULL, PRIMARY KEY (day, model))`,
+  `CREATE TABLE IF NOT EXISTS push_subs (endpoint TEXT PRIMARY KEY, data TEXT NOT NULL, created INTEGER NOT NULL)`
 ];
 const ACCESS_TEAM = 'raspy-bush-7e42';
 const SESSION_DAYS = 90;
@@ -150,7 +151,7 @@ async function accessEmail(req, env){
   } catch(e){ return null; }
 }
 const PAGE_HEADERS = {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-frame-options': 'DENY', 'referrer-policy': 'same-origin',
-  'content-security-policy': "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"};
+  'content-security-policy': "default-src 'self'; script-src 'unsafe-inline'; worker-src 'self'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"};
 
 /* ---------------- Claude ---------------- */
 async function countUsage(env){
@@ -342,6 +343,132 @@ function teamLines(feed, t){
   return L;
 }
 
+/* ---------------- Web Push: notifikasi pagi 8:00 ---------------- */
+const te = new TextEncoder();
+const b64u = buf => { const a = new Uint8Array(buf); let s = ''; for(let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const unb64u = s => { s = String(s || '').replace(/-/g, '+').replace(/_/g, '/'); while(s.length % 4) s += '='; return Uint8Array.from(atob(s), c => c.charCodeAt(0)); };
+const catBytes = (...a) => { const o = new Uint8Array(a.reduce((n, x) => n + x.length, 0)); let i = 0; for(const x of a){ o.set(x, i); i += x.length; } return o; };
+const PUSH_HOSTS = /^(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|[a-z0-9.-]+\.push\.apple\.com|[a-z0-9.-]+\.notify\.windows\.com|push\.services\.mozilla\.com)$/;
+function validSub(s){
+  try { const u = new URL(s.endpoint); return u.protocol === 'https:' && PUSH_HOSTS.test(u.hostname) && unb64u(s.keys.p256dh).length === 65 && unb64u(s.keys.auth).length === 16; } catch(e){ return false; }
+}
+async function vapidKeys(env){
+  const hit = await getMeta(env, 'vapid');
+  if(hit) return JSON.parse(hit);
+  const kp = await crypto.subtle.generateKey({name: 'ECDSA', namedCurve: 'P-256'}, true, ['sign', 'verify']);
+  const v = {priv: await crypto.subtle.exportKey('jwk', kp.privateKey), pub: b64u(await crypto.subtle.exportKey('raw', kp.publicKey))};
+  await setMeta(env, 'vapid', JSON.stringify(v));
+  return v;
+}
+async function hkdf(salt, ikm, info, len){
+  const k = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
+  return new Uint8Array(await crypto.subtle.deriveBits({name: 'HKDF', hash: 'SHA-256', salt, info}, k, len * 8));
+}
+// RFC 8291 (aes128gcm)
+async function encryptPush(sub, payload){
+  const ua = unb64u(sub.keys.p256dh), auth = unb64u(sub.keys.auth);
+  const eph = await crypto.subtle.generateKey({name: 'ECDH', namedCurve: 'P-256'}, true, ['deriveBits']);
+  const asPub = new Uint8Array(await crypto.subtle.exportKey('raw', eph.publicKey));
+  const uaKey = await crypto.subtle.importKey('raw', ua, {name: 'ECDH', namedCurve: 'P-256'}, false, []);
+  const shared = new Uint8Array(await crypto.subtle.deriveBits({name: 'ECDH', public: uaKey}, eph.privateKey, 256));
+  const ikm = await hkdf(auth, shared, catBytes(te.encode('WebPush: info'), new Uint8Array([0]), ua, asPub), 32);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const cek = await hkdf(salt, ikm, catBytes(te.encode('Content-Encoding: aes128gcm'), new Uint8Array([0])), 16);
+  const nonce = await hkdf(salt, ikm, catBytes(te.encode('Content-Encoding: nonce'), new Uint8Array([0])), 12);
+  const key = await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt']);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv: nonce}, key, catBytes(te.encode(payload), new Uint8Array([2]))));
+  const head = new Uint8Array(21); head.set(salt, 0); new DataView(head.buffer).setUint32(16, 4096); head[20] = 65;
+  return catBytes(head, asPub, ct);
+}
+async function vapidAuth(env, endpoint){
+  const v = await vapidKeys(env);
+  const h = b64u(te.encode(JSON.stringify({typ: 'JWT', alg: 'ES256'})));
+  const c = b64u(te.encode(JSON.stringify({aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: 'https://heyarmay.com'})));
+  const k = await crypto.subtle.importKey('jwk', v.priv, {name: 'ECDSA', namedCurve: 'P-256'}, false, ['sign']);
+  const sig = await crypto.subtle.sign({name: 'ECDSA', hash: 'SHA-256'}, k, te.encode(h + '.' + c));
+  return `vapid t=${h}.${c}.${b64u(sig)}, k=${v.pub}`;
+}
+async function sendPush(env, sub, msg){
+  const body = await encryptPush(sub, JSON.stringify(msg));
+  const r = await fetch(sub.endpoint, {method: 'POST', body, headers: {'content-encoding': 'aes128gcm', 'content-type': 'application/octet-stream', ttl: '43200', urgency: 'high', authorization: await vapidAuth(env, sub.endpoint)}});
+  return r.status;
+}
+async function pushAll(env, msg, only){
+  const rows = ((await env.DB.prepare('SELECT endpoint, data FROM push_subs').all()).results || []).filter(r => !only || r.endpoint === only);
+  let sent = 0; const codes = [];
+  for(const r of rows){
+    try {
+      const s = await sendPush(env, JSON.parse(r.data), msg); codes.push(s);
+      if(s === 404 || s === 410) await env.DB.prepare('DELETE FROM push_subs WHERE endpoint = ?').bind(r.endpoint).run();
+      else if(s >= 200 && s < 300) sent++;
+    } catch(e){ codes.push(0); }
+  }
+  return {sent, total: rows.length, codes};
+}
+const MON3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const hm12 = s => { const [h, m] = String(s).split(':').map(Number); if(!isFinite(h)) return ''; return `${h % 12 === 0 ? 12 : h % 12}:${pad(m || 0)}${h < 12 ? 'am' : 'pm'}`; };
+const WXT = c => c === 0 ? 'Clear' : c <= 2 ? 'Partly cloudy' : c === 3 ? 'Cloudy' : c === 45 || c === 48 ? 'Foggy' : c <= 57 ? 'Drizzle' : c <= 63 ? 'Rain' : c <= 67 ? 'Heavy rain' : c <= 82 ? 'Showers' : c >= 95 ? 'Thunderstorms' : '';
+async function morningMessage(env){
+  await ensureSchema(env);
+  const t = todayLocal(), d = nowLocal(), ym = t.slice(0, 7);
+  const items = (await allDocs(env, 'items')).map(x => ({id: x.id, ...x.data})).filter(i => !i.example);
+  const by = k => items.filter(i => i.kind === k);
+  const agenda = [];
+  by('event').filter(i => i.date === t).forEach(i => agenda.push([i.start || '', i.title + (i.place ? ' @ ' + i.place : '')]));
+  by('reminder').filter(i => !i.done && String(i.at || '').slice(0, 10) === t).forEach(i => agenda.push([String(i.at).slice(11, 16), '⏰ ' + i.title]));
+  if(env.ARMEDIA_DB){
+    try { const f = await armediaFeed(env, t, t), seen = new Set();
+      f.jobs.filter(j => j.date === t).forEach(j => { if(seen.has(j.shoot)) return; seen.add(j.shoot); agenda.push([j.time || '', '🎬 ' + (j.title || 'Team job')]); });
+    } catch(e){}
+  }
+  agenda.sort((a, b) => (a[0] || '99').localeCompare(b[0] || '99'));
+  const lines = agenda.slice(0, 4).map(([s, x]) => (s ? hm12(s) + ' ' : 'All day · ') + x);
+  if(agenda.length > 4) lines.push(`+${agenda.length - 4} more on the schedule`);
+  const extra = [];
+  const tasks = by('task').filter(i => !i.done && ((i.due && i.due <= t) || i.priority === 'tinggi'));
+  const lateT = tasks.filter(i => i.due && i.due < t).length;
+  if(tasks.length) extra.push(`✅ ${tasks.length} task${tasks.length > 1 ? 's' : ''} need${tasks.length > 1 ? '' : 's'} attention${lateT ? ` (${lateT} overdue)` : ''}`);
+  const lastDay = new Date(Date.UTC(Number(t.slice(0, 4)), Number(t.slice(5, 7)), 0)).getUTCDate();
+  const bills = by('bill').filter(b => (b.cycle !== 'tahunan' || Number(b.month) === Number(t.slice(5, 7))) && !(b.paid && b.paid[ym]) && `${ym}-${pad(Math.min(Math.max(Number(b.day) || 1, 1), lastDay))}` <= t);
+  if(bills.length) extra.push(`💳 Bill${bills.length > 1 ? 's' : ''} due: ${bills.map(b => b.title).slice(0, 3).join(', ')}`);
+  const ren = by('renewal').filter(i => isYmd(i.date) && daysBetween(t, i.date) <= 7);
+  if(ren.length) extra.push(`⚠️ ${ren.map(i => i.title + (i.date < t ? ' (expired)' : i.date === t ? ' (today)' : ` (${daysBetween(t, i.date)}d)`)).slice(0, 2).join(', ')}`);
+  by('person').forEach(p => { for(const [k, w] of [['birthday', 'birthday'], ['anniv', 'anniversary']]){ const x = nextAnnual(p[k], t); if(x && x.in === 0) extra.push(`🎂 ${p.name}'s ${w} today`); } });
+  try {
+    const q = new URLSearchParams({latitude: '3.04', longitude: '101.45', timezone: 'Asia/Kuala_Lumpur', forecast_days: '1', daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code'});
+    const w = await (await fetch('https://api.open-meteo.com/v1/forecast?' + q)).json();
+    const dy = w.daily || {};
+    if(dy.temperature_2m_max) extra.push(`🌦 ${WXT(dy.weather_code[0]) || 'Weather'}, ${Math.round(dy.temperature_2m_max[0])}°/${Math.round(dy.temperature_2m_min[0])}°, ${dy.precipitation_probability_max[0]}% chance of rain`);
+  } catch(e){}
+  const body = [...lines, ...extra].join('\n') || 'Nothing on the schedule today. Enjoy the free day.';
+  const HARI3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return {title: `Good morning, Amir · ${HARI3[d.getUTCDay()]} ${d.getUTCDate()} ${MON3[d.getUTCMonth()]}`, body, url: '/#hari-ini', tag: 'hy-morning'};
+}
+async function morningPushOnce(env){
+  await ensureSchema(env);
+  const t = todayLocal();
+  if(await getMeta(env, 'push_last') === t) return {skipped: true};
+  const n = (await env.DB.prepare('SELECT COUNT(*) AS n FROM push_subs').first()).n;
+  if(!n) return {sent: 0, total: 0};
+  await setMeta(env, 'push_last', t);
+  return pushAll(env, await morningMessage(env));
+}
+const SW_JS = `self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch(_){ d = {body: e.data ? e.data.text() : ''}; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Hey Armay', {body: d.body || '', icon: '/icon-192.png', tag: d.tag || 'hy', renotify: true, data: {url: d.url || '/'}}));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || '/', self.location.origin).href;
+  e.waitUntil(self.clients.matchAll({type: 'window', includeUncontrolled: true}).then(ws => {
+    for(const w of ws){ if(w.url.indexOf(self.location.origin) === 0){ if('navigate' in w) w.navigate(url).catch(() => {}); return w.focus(); } }
+    return self.clients.openWindow(url);
+  }));
+});`;
+
 /* ---------------- halaman log masuk & akaun ---------------- */
 const PAGE_CSS = `
 @property --ang{syntax:'<angle>';inherits:false;initial-value:0deg}
@@ -385,6 +512,7 @@ button.go{width:100%;margin-top:24px;border:0;border-radius:12px;background:var(
 button.go:hover{box-shadow:0 0 26px rgba(var(--glow),.35)}
 button.go:active{transform:scale(.98)}
 button.go:disabled{opacity:.75;cursor:progress;background-size:200% 100%;animation:shimmer 1.2s linear infinite}
+.nt-b{display:flex;flex-direction:column;gap:0}.nt-b [hidden]{display:none}
 button.ghost{width:100%;margin-top:10px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--ink);font:inherit;font-weight:600;padding:13px;cursor:pointer}
 button.ghost:hover{border-color:var(--rose);color:var(--rose)}
 .err{display:none;margin-top:14px;background:var(--rose-soft);color:var(--rose);border:1px solid rgba(197,51,82,.25);border-radius:12px;padding:10px 12px;font-size:.88rem;animation:rise .3s var(--ease) both}
@@ -486,6 +614,9 @@ function accountPage(user){
 <div class="use-models" id="u-models"></div>
 <p class="hint" id="u-note"></p>
 <a class="use-link" href="https://platform.claude.com/dashboard" target="_blank" rel="noopener">Credit balance & actual billing in Claude Console ↗</a></section>
+<hr><section class="use" aria-labelledby="nt-h"><h2 id="nt-h">Morning notification</h2>
+<p class="hint" id="nt-s" style="margin:4px 0 12px">Every day at 8:00 am, a notification on this device with today's schedule, team jobs, tasks and weather.</p>
+<div class="nt-b"><button class="go" id="nt-on" type="button" hidden>Turn on for this device</button><button class="ghost" id="nt-test" type="button" hidden>Send a preview now</button><button class="ghost" id="nt-off" type="button" hidden>Turn off on this device</button></div></section>
 <hr><h2 class="pw-h">Change password</h2>
 <form id="f" novalidate>
 <input type="text" name="username" autocomplete="username" value="${safe}" hidden>
@@ -510,6 +641,45 @@ $('#f').addEventListener('submit', async ev => {
   btn.disabled = false; btn.textContent = 'Change password';
 });
 $('#out').addEventListener('click', async () => { await post('/api/auth/logout', {}); location.href = '/'; });
+(function(){
+  const s = $('#nt-s'), on = $('#nt-on'), off = $('#nt-off'), tst = $('#nt-test');
+  const ok = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const u8 = x => { x = String(x).replace(/-/g, '+').replace(/_/g, '/'); while(x.length % 4) x += '='; return Uint8Array.from(atob(x), c => c.charCodeAt(0)); };
+  let reg = null, sub = null;
+  const show = (state, msg) => { on.hidden = state !== 'off'; off.hidden = tst.hidden = state !== 'on'; if(msg) s.textContent = msg; };
+  if(!ok){ show('none', "This browser can't receive notifications. On Android, use Chrome; on iPhone, add Hey Armay to the Home Screen first."); return; }
+  (async () => {
+    try {
+      reg = await navigator.serviceWorker.register('/sw.js'); sub = await reg.pushManager.getSubscription();
+      if(Notification.permission === 'denied') show('none', 'Notifications are blocked for heyarmay.com. Allow them in your browser or phone settings, then reload this page.');
+      else if(sub) show('on', "On for this device. You'll get today's plan at 8:00 am every morning.");
+      else show('off');
+    } catch(e){ show('none', "Notifications aren't available here."); }
+  })();
+  on.addEventListener('click', async () => {
+    on.disabled = true;
+    try {
+      const perm = await Notification.requestPermission();
+      if(perm !== 'granted'){ show(perm === 'denied' ? 'none' : 'off', 'Notifications were not allowed.'); on.disabled = false; return; }
+      await navigator.serviceWorker.ready;
+      const k = (await (await fetch('/api/push/key', {credentials:'same-origin', cache:'no-store'})).json()).key;
+      sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: u8(k)});
+      const r = await post('/api/push/sub', JSON.parse(JSON.stringify(sub)));
+      if(!r.ok) throw new Error('sub');
+      show('on', "On for this device. You'll get today's plan at 8:00 am every morning. A preview is on its way.");
+      post('/api/push/test', {endpoint: sub.endpoint});
+    } catch(e){ s.textContent = "Couldn't turn on notifications. Try again."; }
+    on.disabled = false;
+  });
+  tst.addEventListener('click', async () => {
+    tst.disabled = true;
+    try { const r = await post('/api/push/test', {endpoint: sub && sub.endpoint}); s.textContent = r.sent ? 'Preview sent. It should appear in a few seconds.' : "The preview couldn't be delivered. Turn it off and on again."; } catch(e){ s.textContent = 'No connection. Try again.'; }
+    tst.disabled = false;
+  });
+  off.addEventListener('click', async () => {
+    try { if(sub){ await post('/api/push/unsub', {endpoint: sub.endpoint}); await sub.unsubscribe(); sub = null; } show('off', 'Off for this device.'); } catch(e){ s.textContent = "Couldn't turn it off. Try again."; }
+  });
+})();
 (async () => {
   try {
     const u = await (await fetch('/api/usage', {credentials:'same-origin', cache:'no-store'})).json();
@@ -547,6 +717,7 @@ async function handle(req, env, ctx){
     const bin = Uint8Array.from(atob(PNGS[p]), c => c.charCodeAt(0));
     return new Response(bin, {headers: {'content-type': 'image/png', 'cache-control': 'public, max-age=3600'}});
   }
+  if(p === '/sw.js') return new Response(SW_JS, {headers: {'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache'}});
   if(p === '/manifest.webmanifest') return new Response(MANIFEST, {headers: {'content-type': 'application/manifest+json'}});
   if(p === '/icon-192.png' || p === '/icon-512.png') {
     const b64 = p === '/icon-512.png' ? ICON_512 : ICON_192;
@@ -603,6 +774,32 @@ async function handle(req, env, ctx){
     await setPassword(env, auth.user, b.key);
     await env.DB.prepare('DELETE FROM sessions').run();
     return J({ok: true}, 200, {'set-cookie': setCookie(await newSession(env))});
+  }
+  // Notifikasi pagi (Web Push)
+  if(p === '/api/push/key' && m === 'GET') return J({key: (await vapidKeys(env)).pub});
+  if(p === '/api/push/sub' && m === 'POST'){
+    const s = await req.json().catch(() => null);
+    if(!s || !s.keys || !validSub(s)) return J({error: 'sub'}, 400);
+    const n = (await env.DB.prepare('SELECT COUNT(*) AS n FROM push_subs').first()).n;
+    if(n >= 10) await env.DB.prepare('DELETE FROM push_subs WHERE endpoint IN (SELECT endpoint FROM push_subs ORDER BY created LIMIT 1)').run();
+    await env.DB.prepare('INSERT INTO push_subs (endpoint, data, created) VALUES (?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET data = excluded.data').bind(s.endpoint, JSON.stringify({endpoint: s.endpoint, keys: {p256dh: s.keys.p256dh, auth: s.keys.auth}}), Date.now()).run();
+    return J({ok: true});
+  }
+  if(p === '/api/push/unsub' && m === 'POST'){
+    const s = await req.json().catch(() => null) || {};
+    await env.DB.prepare('DELETE FROM push_subs WHERE endpoint = ?').bind(String(s.endpoint || '')).run();
+    return J({ok: true});
+  }
+  if(p === '/api/push/test' && m === 'POST'){
+    const s = await req.json().catch(() => null) || {};
+    const msg = await morningMessage(env);
+    return J(await pushAll(env, {...msg, title: msg.title.replace('Good morning', 'Preview'), tag: 'hy-test'}, s.endpoint ? String(s.endpoint) : null));
+  }
+  if(p === '/api/push/status' && m === 'GET'){
+    const ep = url.searchParams.get('endpoint') || '';
+    const r = ep ? await env.DB.prepare('SELECT 1 AS x FROM push_subs WHERE endpoint = ?').bind(ep).first() : null;
+    const n = (await env.DB.prepare('SELECT COUNT(*) AS n FROM push_subs').first()).n;
+    return J({on: !!r, devices: n});
   }
   if(p === '/akaun' && m === 'GET') return new Response(accountPage((await getAuth(env)).user), {headers: PAGE_HEADERS});
 
@@ -783,7 +980,7 @@ export default {
     catch(e){ return J({error: 'server', message: String(e && e.message || e)}, 500); }
   },
   async scheduled(event, env, ctx){
-    const kind = event.cron && event.cron.trim().endsWith('SUN') ? 'minggu' : 'pagi';
-    ctx.waitUntil(makeDigest(env, kind));
+    // 00:00 UTC = 8:00 pagi waktu Malaysia: hantar notifikasi pagi ke semua peranti yang dihidupkan
+    ctx.waitUntil(morningPushOnce(env).catch(() => {}));
   }
 };
