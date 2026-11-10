@@ -1244,7 +1244,8 @@ function teamShoots(day){
   return [...m.values()].filter(g => !teamWhoOk(g)).sort((a,b) => String(a.time).localeCompare(String(b.time)));
 }
 function teamWhoOk(g){ const w = ui.teamWho; return w && ![...g.reviewers].includes(w) && !g.chans.some(c => c.editor === w); }
-const teamOpen = j => !!j.deadline && j.status !== 'Dipost';
+const TEAM_CHECK = ['Tunggu approval client', 'Sedia untuk post'];
+const teamOpen = j => !!j.deadline && j.status !== 'Dipost' && !TEAM_CHECK.includes(j.status);
 const teamWhoJob = j => !ui.teamWho || j.reviewers.includes(ui.teamWho) || j.editor === ui.teamWho || j.channels.some(c => c.editor === ui.teamWho);
 const teamLate = () => { const now = new Date(); return team.jobs.filter(j => teamOpen(j) && teamWhoJob(j) && new Date(j.deadline.length > 10 ? j.deadline : j.deadline + 'T23:59') < now); };
 const teamDueIn = (a, b) => team.jobs.filter(j => teamOpen(j) && teamWhoJob(j) && j.deadline.slice(0,10) >= a && j.deadline.slice(0,10) <= b && !teamLate().includes(j));
@@ -1298,12 +1299,14 @@ function vTeam(){
   }).join('');
   const late = teamLate().sort((a,b) => a.deadline.localeCompare(b.deadline));
   const due = teamDueIn(t, addDays(t, 7)).sort((a,b) => a.deadline.localeCompare(b.deadline));
+  const chk = team.jobs.filter(j => TEAM_CHECK.includes(j.status) && teamWhoJob(j)).sort((a,b) => String(a.deadline).localeCompare(String(b.deadline)));
   return `<div class="stack">${head}${people.length?who:''}
     <div class="grid two">
       ${panel('Shooting 14 hari', `<div class="list">${sched}</div>`)}
       <div class="stack">
         ${panel(`Lewat deadline${late.length?` (${late.length})`:''}`, late.length?late.map(rowDeadline).join(''):empty('Tiada video lewat. Bagus.'))}
         ${panel('Deadline 7 hari', due.length?due.map(rowDeadline).join(''):empty('Tiada deadline video dalam 7 hari.'))}
+        ${chk.length?panel(`Tunggu client / sedia post (${chk.length})`, chk.map(j => `<a class="row" href="${ARM_URL}" target="_blank" rel="noopener"><span class="kbar" style="background:var(--sky)"></span><div class="rt"><span class="t">${esc(j.title||'Video')}</span><span class="meta"><span class="chip ev">${esc(j.status)}</span>${j.channels[0]?`<span class="chip">${esc(j.channels[0].ch)}</span>`:''}${j.deadline?`<span>deadline ${esc(fmtD(j.deadline.slice(0,10)))}</span>`:''}</span></div></a>`).join('')):''}
       </div>
     </div></div>`;
 }

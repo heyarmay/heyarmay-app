@@ -310,8 +310,10 @@ function teamLines(feed, t){
     if(seen.has(j.shoot)) return; seen.add(j.shoot);
     L.push(`Shooting team ${j.time || ''}: ${j.title}${j.location ? ' @ ' + j.location : ''}${j.reviewers.length ? ' (reviewer: ' + j.reviewers.join(', ') + ')' : ''}${j.urgent ? ' [URGENT]' : ''}`);
   });
-  const late = feed.jobs.filter(j => j.deadline && j.status !== 'Dipost' && j.deadline.slice(0, 10) < t);
-  const dueToday = feed.jobs.filter(j => j.deadline && j.status !== 'Dipost' && j.deadline.slice(0, 10) === t);
+  const CHECK = ['Tunggu approval client', 'Sedia untuk post'];
+  const open = j => j.deadline && j.status !== 'Dipost' && !CHECK.includes(j.status);
+  const late = feed.jobs.filter(j => open(j) && j.deadline.slice(0, 10) < t);
+  const dueToday = feed.jobs.filter(j => open(j) && j.deadline.slice(0, 10) === t);
   if(dueToday.length) L.push(`Video team perlu siap hari ini: ${dueToday.map(j => j.title + (j.channels[0] ? ' (' + j.channels[0].ch + ')' : '')).join('; ')}`);
   if(late.length) L.push(`Video team LEWAT deadline: ${late.length} (${late.slice(0, 4).map(j => j.title).join('; ')}${late.length > 4 ? '…' : ''})`);
   const off = feed.leaves.filter(l => l.from <= t && l.to >= t).map(l => l.name);
