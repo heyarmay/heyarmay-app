@@ -392,7 +392,7 @@ const ui = {
 { const d = new Date(); ui.calMonth = new Date(d.getFullYear(), d.getMonth(), 1); }
 
 const NAV = [
-  [null, [['hari-ini','Hari Ini'],['tugasan','Tugasan'],['kalendar','Kalendar'],['team','Jadual Team'],['belanja','Belanja'],['nota','Nota']]],
+  [null, [['hari-ini','Hari Ini'],['tugasan','Tugasan'],['kalendar','Kalendar'],['team','Jadual Team'],['belanja','Belanja'],['berat','Berat'],['nota','Nota']]],
   ['Kerja', [['menunggu','Menunggu'],['bayaran','Bayaran'],['idea','Idea']]],
   ['Masa', [['peringatan','Peringatan'],['tarikh','Tarikh Tamat']]],
   ['Hidup', [['bil','Bil'],['matlamat','Matlamat & Tabiat'],['perjalanan','Perjalanan']]],
@@ -432,9 +432,10 @@ const S = {
   contact:['Kenalan',[['name','Nama','text'],['phone','Telefon','tel'],['cat','Kategori','sel',0,CON_CAT],['label','Label / jenis servis','text'],['notes','Catatan','area',1]]],
   template:['Templat',[['name','Nama templat','text',1],['body','Mesej','area',1]]],
   link:['Pautan',[['title','Nama','text',1],['url','Alamat (https://…)','url',1],['group','Kumpulan','sel',0,LINK_G],['notes','Catatan (jangan simpan kata laluan)','area',1]]],
+  weight:['Berat',[['kg','Berat (kg)','num'],['date','Tarikh','date'],['note','Catatan','text',1]]],
   expense:['Belanja',[['amount','Jumlah (RM)','num'],['date','Tarikh','date'],['note','Untuk apa','text',1],['cat','Kategori','sel',0,EXP_CAT],['scope','Jenis','sel',0,SCOPE],['method','Cara bayar','sel',0,METHOD]]]
 };
-const nameOf = i => i.title || i.name || i.client || i.note || 'Tanpa tajuk';
+const nameOf = i => i.kind==='weight' ? `${Number(i.kg).toFixed(1)} kg` : (i.title || i.name || i.client || i.note || 'Tanpa tajuk');
 
 /* ---------- storage ---------- */
 function toast(msg, action){
@@ -1455,6 +1456,105 @@ function vTeam(){
     </div></div>`;
 }
 
+/* ---------- Berat badan ---------- */
+function weightStats(list){
+  const w = list.slice().sort((a,b) => a.date.localeCompare(b.date));
+  if(!w.length) return null;
+  const last = w[w.length-1], first = w[0];
+  const near = days => { const target = addDays(last.date, -days); let best = null; for(const x of w){ if(x.date <= target) best = x; } return best; };
+  const d7 = near(7), d30 = near(30);
+  const span = daysBetween(first.date, last.date);
+  // kadar purata seminggu: kecerunan regresi linear 30 hari terakhir (atau semua jika kurang)
+  const win = w.filter(x => daysBetween(x.date, last.date) <= 30);
+  let perWeek = null;
+  if(win.length >= 3){
+    const xs = win.map(x => daysBetween(win[0].date, x.date)), ys = win.map(x => Number(x.kg));
+    const mx = xs.reduce((a,b)=>a+b,0)/xs.length, my = ys.reduce((a,b)=>a+b,0)/ys.length;
+    const num = xs.reduce((s,x,i)=>s+(x-mx)*(ys[i]-my),0), den = xs.reduce((s,x)=>s+(x-mx)*(x-mx),0);
+    if(den > 0) perWeek = num/den*7;
+  }
+  const kgs = w.map(x => Number(x.kg));
+  return {w, last, first, span, d7: d7 ? last.kg - d7.kg : null, d30: d30 ? last.kg - d30.kg : null, total: last.kg - first.kg, perWeek,
+    min: w.reduce((a,b) => b.kg < a.kg ? b : a), max: w.reduce((a,b) => b.kg > a.kg ? b : a), avg: kgs.reduce((a,b)=>a+b,0)/kgs.length};
+}
+const sdW = s => { const d = parseYmd(s); return `${d.getDate()} ${BLS[d.getMonth()]}${d.getFullYear()!==new Date().getFullYear()?' '+String(d.getFullYear()).slice(2):''}`; };
+const sgn = (n, u = ' kg') => n == null ? '—' : (n > 0 ? '+' : n < 0 ? '−' : '±') + Math.abs(n).toFixed(1) + u;
+function weightChart(w){
+  const R = ui.wRange || '90';
+  const end = today(), start = R === 'all' ? (w[0] ? w[0].date : end) : addDays(end, -Number(R));
+  const pts = w.filter(x => x.date >= start);
+  if(pts.length < 2) return `<div class="empty">${pts.length ? 'Satu rekod dalam tempoh ini. Tambah lagi untuk lihat graf.' : 'Tiada rekod dalam tempoh ini.'}</div>`;
+  const vw = (document.getElementById('view') || {}).clientWidth || 640;
+  const W = Math.round(Math.max(300, Math.min(900, vw - 44))), H = W < 520 ? 200 : 240, L = 40, Rr = 14, T = 14, B = 26;
+  const t0 = parseYmd(start).getTime(), t1 = parseYmd(end).getTime(), span = Math.max(1, t1 - t0);
+  const ks = pts.map(x => Number(x.kg)); let lo = Math.min(...ks), hi = Math.max(...ks);
+  const pad = Math.max(0.5, (hi - lo) * 0.15); lo = Math.floor((lo - pad) * 2) / 2; hi = Math.ceil((hi + pad) * 2) / 2;
+  const X = d => L + (parseYmd(d).getTime() - t0) / span * (W - L - Rr), Y = k => T + (hi - k) / (hi - lo) * (H - T - B);
+  const ticks = [lo, (lo + hi) / 2, hi];
+  const line = pts.map((x, i) => `${i ? 'L' : 'M'}${X(x.date).toFixed(1)} ${Y(x.kg).toFixed(1)}`).join(' ');
+  const area = line + ` L${X(pts[pts.length-1].date).toFixed(1)} ${H - B} L${X(pts[0].date).toFixed(1)} ${H - B} Z`;
+  const lastP = pts[pts.length-1];
+  const dots = pts.length <= 60 ? pts.map(x => `<circle class="wdot" cx="${X(x.date).toFixed(1)}" cy="${Y(x.kg).toFixed(1)}" r="4"/>`).join('') : '';
+  const mid = addDays(start, Math.round(daysBetween(start, end) / 2));
+  return `<div class="wchart" data-pts='${esc(JSON.stringify(pts.map(x => [x.date, x.kg, X(x.date), Y(x.kg)])))}' data-w="${W}">
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Graf berat ${pts.length} rekod, ${fmtD(pts[0].date)} hingga ${fmtD(lastP.date)}">
+      <defs><linearGradient id="wfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".22"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+      ${ticks.map(k => `<line class="wgrid" x1="${L}" x2="${W - Rr}" y1="${Y(k).toFixed(1)}" y2="${Y(k).toFixed(1)}"/><text class="wtick" x="${L - 6}" y="${(Y(k) + 4).toFixed(1)}" text-anchor="end">${k.toFixed(1)}</text>`).join('')}
+      <text class="wtick" x="${L}" y="${H - 6}">${esc(sdW(start))}</text><text class="wtick" x="${X(mid).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(sdW(mid))}</text><text class="wtick" x="${W - Rr}" y="${H - 6}" text-anchor="end">${esc(sdW(end))}</text>
+      <path class="warea" d="${area}" fill="url(#wfill)"/>
+      <path class="wline" d="${line}"/>
+      ${dots}
+      <circle class="wlast" cx="${X(lastP.date).toFixed(1)}" cy="${Y(lastP.kg).toFixed(1)}" r="6"/>
+      <g class="wcross" visibility="hidden"><line class="wx" y1="${T}" y2="${H - B}"/><circle class="wpt" r="6"/></g>
+    </svg><div class="wtip" hidden></div></div>`;
+}
+function vWeight(){
+  const st = weightStats(byKind('weight').filter(x => isYmd(x.date) && Number(x.kg) > 0));
+  const t = today();
+  const form = `<form id="f-weight" class="panel wform" autocomplete="off">
+    <div class="wform-row"><label class="lb">Berat (kg)<input class="f amtin" id="w-kg" type="number" inputmode="decimal" step="0.1" min="20" max="400" placeholder="${st ? Number(st.last.kg).toFixed(1) : '70.0'}" required></label>
+    <label class="lb">Tarikh<input class="f" id="w-date" type="date" value="${t}" max="${t}"></label>
+    <button class="btn pri" type="submit">Simpan</button></div></form>`;
+  if(!st) return `<div class="stack"><div class="head"><div><h1>Berat</h1><p>Rekod berat badan anda. Ringkasan dan graf akan keluar selepas beberapa rekod.</p></div></div>${form}</div>`;
+  const tile = (label, val, sub) => `<div class="wtile"><span>${label}</span><b>${val}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  const R = ui.wRange || '90';
+  const rng = [['30','30 hari'],['90','90 hari'],['365','1 tahun'],['all','Semua']];
+  const recent = st.w.slice(-8).reverse();
+  return `<div class="stack">
+    <div class="head"><div><h1>Berat</h1><p>Rekod terakhir: ${esc(fmtD(st.last.date))}${st.last.date===t?'':` (${relDays(daysBetween(t, st.last.date))})`}.</p></div></div>
+    ${form}
+    <div class="wtiles">
+      ${tile('Terkini', Number(st.last.kg).toFixed(1) + ' kg', esc(fmtD(st.last.date)))}
+      ${tile('7 hari', sgn(st.d7), st.d7 == null ? 'perlu rekod 7 hari lalu' : '')}
+      ${tile('30 hari', sgn(st.d30), st.d30 == null ? 'perlu rekod 30 hari lalu' : '')}
+      ${tile('Sejak mula', sgn(st.total), `sejak ${esc(fmtD(st.first.date))}`)}
+      ${tile('Kadar seminggu', st.perWeek == null ? '—' : sgn(st.perWeek, ' kg'), st.perWeek == null ? 'perlu 3 rekod' : 'purata 30 hari')}
+      ${tile('Julat', `${Number(st.min.kg).toFixed(1)}–${Number(st.max.kg).toFixed(1)}`, `purata ${st.avg.toFixed(1)} kg`)}
+    </div>
+    <div class="panel"><div class="ph wph"><h3>Graf berat (kg)</h3><div class="filters">${rng.map(([k,l]) => `<button class="${R===k?'on':''}" data-wrange="${k}">${l}</button>`).join('')}</div></div>
+      ${weightChart(st.w)}</div>
+    <div class="panel"><div class="ph"><h3>Rekod terkini</h3></div><div class="list">
+      ${recent.map((x, i) => { const prev = st.w[st.w.length - 2 - i]; const dlt = prev ? x.kg - prev.kg : null;
+        return `<div class="row" data-open="${x.id}"><span class="time">${esc(fmtD(x.date))}</span><div class="rt"><span class="t">${Number(x.kg).toFixed(1)} kg</span>${x.note?`<span class="meta"><span>${esc(x.note)}</span></span>`:''}</div><span class="amt muted">${dlt == null ? '' : sgn(dlt)}</span></div>`; }).join('')}
+    </div></div>
+  </div>`;
+}
+// Tuding/sentuh pada graf: garis silang + nilai
+document.addEventListener('pointermove', ev => {
+  const box = ev.target.closest && ev.target.closest('.wchart'); if(!box) return;
+  const svg = box.querySelector('svg'), r = svg.getBoundingClientRect(), W = Number(box.dataset.w);
+  const x = (ev.clientX - r.left) / r.width * W;
+  let pts; try { pts = JSON.parse(box.dataset.pts); } catch(e){ return; }
+  let best = pts[0]; for(const p of pts) if(Math.abs(p[2] - x) < Math.abs(best[2] - x)) best = p;
+  const g = box.querySelector('.wcross'); g.setAttribute('visibility', 'visible');
+  const ln = g.querySelector('.wx'); ln.setAttribute('x1', best[2]); ln.setAttribute('x2', best[2]);
+  const c = g.querySelector('.wpt'); c.setAttribute('cx', best[2]); c.setAttribute('cy', best[3]);
+  const tip = box.querySelector('.wtip'); tip.hidden = false;
+  tip.innerHTML = `<b>${Number(best[1]).toFixed(1)} kg</b><span>${esc(fmtD(best[0]))}</span>`;
+  const px = best[2] / W * r.width; tip.style.left = Math.min(Math.max(px, 50), r.width - 50) + 'px';
+});
+document.addEventListener('pointerleave', ev => { const box = ev.target && ev.target.classList && ev.target.classList.contains('wchart') ? ev.target : null; if(box){ box.querySelector('.wcross').setAttribute('visibility','hidden'); box.querySelector('.wtip').hidden = true; } }, true);
+
 function dayItems(s){
   return {
     a: teamShoots(s),
@@ -1811,7 +1911,7 @@ function vReview(){
     </div></div>`;
 }
 
-const RENDER = {'team':vTeam,'hari-ini':vToday,'belanja':vExpenses,'tugasan':vTasks,'menunggu':vWaiting,'bayaran':vPayments,'idea':vIdeas,'peringatan':vReminders,'kalendar':vCalendar,'tarikh':vRenewals,
+const RENDER = {'berat':vWeight,'team':vTeam,'hari-ini':vToday,'belanja':vExpenses,'tugasan':vTasks,'menunggu':vWaiting,'bayaran':vPayments,'idea':vIdeas,'peringatan':vReminders,'kalendar':vCalendar,'tarikh':vRenewals,
   'matlamat':vGoals,'bil':vBills,'perjalanan':vTrips,'orang':vPeople,'mesej':vMessages,'emel':vEmail,'nota':vNotes,'pautan':vLinks,'semakan':vReview};
 function render(){
   renderSide();
@@ -1879,7 +1979,7 @@ function gcalLink(i){
   } else dates = `${d}/${addDays(i.date,1).replace(/-/g,'')}`;
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(i.title||'')}&dates=${dates}&ctz=Asia/Kuala_Lumpur&location=${encodeURIComponent(i.place||'')}&details=${encodeURIComponent(i.notes||'')}`;
 }
-const KCHIP = {task:'task', reminder:'rem', event:'ev', waiting:'ev', renewal:'late', idea:'plum', payment:'rem', bill:'rem', expense:'', note:'', gift:'plum', person:'plum'};
+const KCHIP = {weight:'ev', task:'task', reminder:'rem', event:'ev', waiting:'ev', renewal:'late', idea:'plum', payment:'rem', bill:'rem', expense:'', note:'', gift:'plum', person:'plum'};
 function fmtField([k, l, type, , opts], v){
   if(v === null || v === undefined || v === '' || v === false) return '';
   if(type==='date') return isYmd(v) ? esc(fmtD(v)) : esc(v);
@@ -2353,6 +2453,7 @@ document.addEventListener('click', async ev => {
     if(n===0){ const d = new Date(); ui.teamMonth = new Date(d.getFullYear(), d.getMonth(), 1); ui.teamSel = today(); }
     else ui.teamMonth = new Date(m.getFullYear(), m.getMonth()+n, 1);
     render(); loadTeam(); return; }
+  if((el = pick('data-wrange'))){ ui.wRange = el.dataset.wrange; render(); return; }
   if((el = pick('data-tday'))){ ui.teamSel = el.dataset.tday; render(); return; }
   if((el = pick('data-cal'))){ const n = Number(el.dataset.cal), m = ui.calMonth;
     if(n===0){ const d = new Date(); ui.calMonth = new Date(d.getFullYear(), d.getMonth(), 1); ui.calSel = today(); }
@@ -2488,6 +2589,15 @@ document.addEventListener('submit', async ev => {
   }
   if(f==='f-task') await add({kind:'task', title:v('nt-title'), due:v('nt-due')||null, priority:v('nt-pri'), done:false}, 'Tugasan ditambah');
   if(f==='f-rem'){ const at = v('nr-at'); if(!at) return; await add({kind:'reminder', title:v('nr-title'), at, repeat:v('nr-rep'), done:false}, `Peringatan ${fmtD(at.slice(0,10))}, ${fmtT(at.slice(11))}`); }
+  if(f==='f-weight'){
+    const kg = Math.round(num('w-kg') * 10) / 10, date = isYmd(v('w-date')) ? v('w-date') : t;
+    if(!(kg > 20 && kg < 400)){ toast('Masukkan berat dalam kg, contoh 72.5'); return; }
+    const same = byKind('weight').find(w => w.date === date);
+    if(same){ await updItem(same.id, {kg}); toast(`Berat ${fmtD(date)} dikemas kini: ${kg.toFixed(1)} kg`); }
+    else { await addItem({kind:'weight', kg, date, note:''}); toast(`Berat ${kg.toFixed(1)} kg disimpan`); }
+    const el = document.getElementById('w-kg'); if(el) el.value = '';
+    return;
+  }
   if(f==='f-ev') await add({kind:'event', title:v('ne-title'), date:ui.calSel, start:v('ne-start'), end:v('ne-end'), place:''}, 'Acara ditambah');
   if(f==='f-contact') await add({kind:'contact', name:v('nc-name'), phone:v('nc-phone'), label:v('nc-label'), cat:'umum'}, 'Kenalan ditambah');
   if(f==='f-wait') await add({kind:'waiting', title:v('nw-title'), who:v('nw-who'), since:t, expect:v('nw-exp'), done:false}, 'Ditambah ke senarai Menunggu');
