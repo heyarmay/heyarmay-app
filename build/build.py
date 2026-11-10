@@ -36,7 +36,7 @@ MANIFEST = json.dumps({
               {'src': '/icon-mask-192.png?v=3', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'maskable'},
               {'src': '/icon-mask-512.png?v=3', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'}]})
 
-HEAD = ('<!doctype html><html lang="ms"><head><meta charset="utf-8">'
+HEAD = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">'
         '<meta name="theme-color" content="#EDF0F8">'
         '<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/favicon.png?v=3" type="image/png">'

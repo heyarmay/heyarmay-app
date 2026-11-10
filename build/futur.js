@@ -36,13 +36,13 @@
   const nav = document.getElementById('nav');
   if(!brand || !nav) return;
   const b = document.createElement('button');
-  b.type = 'button'; b.className = 'hy-burger'; b.setAttribute('aria-label', 'Buka menu'); b.setAttribute('aria-expanded', 'false'); b.setAttribute('aria-controls', 'nav');
+  b.type = 'button'; b.className = 'hy-burger'; b.setAttribute('aria-label', 'Open menu'); b.setAttribute('aria-expanded', 'false'); b.setAttribute('aria-controls', 'nav');
   b.innerHTML = '<span></span>';
   brand.insertBefore(b, brand.firstChild);
   const scrim = document.createElement('div'); scrim.id = 'hy-scrim'; document.body.appendChild(scrim);
   const set = open => {
     document.body.classList.toggle('hy-open', open);
-    b.setAttribute('aria-expanded', String(open)); b.setAttribute('aria-label', open ? 'Tutup menu' : 'Buka menu');
+    b.setAttribute('aria-expanded', String(open)); b.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
     if(open){ const on = nav.querySelector('a.on') || nav.querySelector('a'); if(on) setTimeout(() => on.focus({preventScroll:false}), 60); }
   };
   b.addEventListener('click', () => set(!document.body.classList.contains('hy-open')));
@@ -71,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
   b.innerHTML = '<svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>'
     + '<svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
   const root = document.documentElement;
-  const label = () => { const d = root.getAttribute('data-hy') === 'dark'; b.setAttribute('aria-label', d ? 'Tukar ke tema terang' : 'Tukar ke tema gelap'); b.title = b.getAttribute('aria-label'); };
+  const label = () => { const d = root.getAttribute('data-hy') === 'dark'; b.setAttribute('aria-label', d ? 'Switch to light theme' : 'Switch to dark theme'); b.title = b.getAttribute('aria-label'); };
   label();
   b.addEventListener('click', () => {
     const next = root.getAttribute('data-hy') === 'dark' ? 'light' : 'dark';
@@ -97,12 +97,12 @@ document.addEventListener('DOMContentLoaded', () => {
     menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>'
   };
   const bar = document.createElement('nav');
-  bar.className = 'hy-tabbar'; bar.setAttribute('aria-label', 'Akses pantas');
-  bar.innerHTML = `<a class="hy-tab" href="#hari-ini" data-view="hari-ini" data-tab="hari-ini">${ic.home}<span>Hari Ini</span></a>
-    <a class="hy-tab" href="#kalendar" data-view="kalendar" data-tab="kalendar">${ic.cal}<span>Kalendar</span></a>
-    <button type="button" class="hy-fab" data-hy="cakap" aria-label="Cakap dan susun"><i>${ic.mic}</i><span>Cakap</span></button>
-    <button type="button" class="hy-tab" data-hy="tulis" aria-label="Tulis cepat">${ic.pen}<span>Tulis</span></button>
-    <button type="button" class="hy-tab" data-hy="menu" aria-label="Semua bahagian">${ic.menu}<span>Menu</span></button>`;
+  bar.className = 'hy-tabbar'; bar.setAttribute('aria-label', 'Quick access');
+  bar.innerHTML = `<a class="hy-tab" href="#hari-ini" data-view="hari-ini" data-tab="hari-ini">${ic.home}<span>Today</span></a>
+    <a class="hy-tab" href="#kalendar" data-view="kalendar" data-tab="kalendar">${ic.cal}<span>Calendar</span></a>
+    <button type="button" class="hy-fab" data-hy="cakap" aria-label="Speak and sort"><i>${ic.mic}</i><span>Speak</span></button>
+    <button type="button" class="hy-tab" data-hy="tulis" aria-label="Quick write">${ic.pen}<span>Write</span></button>
+    <button type="button" class="hy-tab" data-hy="menu" aria-label="All sections">${ic.menu}<span>Menu</span></button>`;
   document.body.appendChild(bar);
   const body = document.body;
   const closeCap = () => body.classList.remove('hy-cap');

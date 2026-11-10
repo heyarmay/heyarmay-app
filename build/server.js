@@ -182,7 +182,7 @@ async function askClaude(env, {input, json, tier, images, maxTokens}){
     model: tier === 'complex' ? MODEL_COMPLEX : MODEL_QUICK,
     max_tokens: maxTokens || 2048,
     messages,
-    system: 'Anda pembantu peribadi dalam aplikasi Hey Armay (sistem pengurusan diri) milik seorang pemilik perniagaan di Malaysia.' + (json ? ' Balas dengan SATU nilai JSON yang sah sahaja, tanpa teks lain dan tanpa blok kod.' : '')
+    system: 'You are the personal assistant inside Hey Armay, a personal management app owned by a business owner in Malaysia. Write in English unless asked otherwise.' + (json ? ' Reply with ONE valid JSON value only, no other text and no code block.' : '')
   };
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -225,7 +225,7 @@ async function usdToMyr(env){
 }
 
 /* ---------------- ringkasan berjadual ---------------- */
-const EXP_CAT = {makan:'Makan & minum', transport:'Minyak & pengangkutan', dapur:'Barang dapur & rumah', bil:'Bil & langganan', keluarga:'Keluarga', kesihatan:'Kesihatan', belibelah:'Membeli-belah', hiburan:'Hiburan & riadah', perjalanan:'Pelancongan', sedekah:'Sedekah & zakat', kerja:'Kerja & peralatan', lain:'Lain-lain'};
+const EXP_CAT = {makan:'Food & drinks', transport:'Fuel & transport', dapur:'Groceries & home', bil:'Bills & subscriptions', keluarga:'Family', kesihatan:'Health', belibelah:'Shopping', hiburan:'Entertainment & leisure', perjalanan:'Travel', sedekah:'Charity & zakat', kerja:'Work & equipment', lain:'Other'};
 function nextAnnual(s, t){
   if(!isYmd(s)) return null;
   const [, m, d] = s.split('-'); const y = Number(t.slice(0, 4));
@@ -235,46 +235,46 @@ function nextAnnual(s, t){
 function morningLines(items, exps, t){
   const L = [], real = items.filter(i => !i.example), by = k => real.filter(i => i.kind === k);
   const ym = t.slice(0, 7), lastDay = new Date(Date.UTC(Number(t.slice(0, 4)), Number(t.slice(5, 7)), 0)).getUTCDate();
-  by('event').filter(i => i.date === t).sort((a, b) => (a.start || '').localeCompare(b.start || '')).forEach(i => L.push(`Acara ${i.start || 'sepanjang hari'}: ${i.title}${i.place ? ' @ ' + i.place : ''}`));
-  by('event').filter(i => i.date > t && i.date <= addDays(t, 2)).forEach(i => L.push(`Akan datang ${i.date} ${i.start || ''}: ${i.title}`));
-  by('reminder').filter(i => !i.done && String(i.at || '').slice(0, 10) <= t).forEach(i => L.push(`Peringatan ${String(i.at).replace('T', ' ')}${String(i.at).slice(0, 10) < t ? ' (terlepas)' : ''}: ${i.title}`));
-  by('task').filter(i => !i.done && ((i.due && i.due <= t) || i.priority === 'tinggi')).forEach(i => L.push(`Tugasan${i.priority === 'tinggi' ? ' [penting]' : ''}${i.due ? ' akhir ' + i.due + (i.due < t ? ' (LEWAT)' : '') : ''}: ${i.title}`));
-  by('waiting').filter(i => !i.done && (i.expect ? i.expect <= t : (isYmd(i.since) && daysBetween(i.since, t) >= 3))).forEach(i => L.push(`Perlu kejar ${i.who || 'seseorang'}: ${i.title}`));
-  by('payment').filter(i => !i.paid && i.due && i.due <= addDays(t, 3)).forEach(i => L.push(`Bayaran klien ${i.client} ${money(i.amount)} ${i.due < t ? 'LEWAT sejak' : 'perlu dibayar'} ${i.due}`));
-  by('bill').filter(b => (b.cycle !== 'tahunan' || Number(b.month) === Number(t.slice(5, 7))) && !(b.paid && b.paid[ym])).forEach(b => { const d = `${ym}-${pad(Math.min(Math.max(Number(b.day) || 1, 1), lastDay))}`; if(d <= addDays(t, 3)) L.push(`Bil ${b.title} ${money(b.amount)} hari ke-${b.day}${d < t ? ' (lewat)' : ''}`); });
-  by('renewal').filter(i => isYmd(i.date) && daysBetween(t, i.date) <= 14).forEach(i => L.push(`Tamat ${i.title} pada ${i.date}`));
-  by('person').forEach(p => { for(const [k, w] of [['birthday', 'Hari lahir'], ['anniv', 'Ulang tahun']]){ const x = nextAnnual(p[k], t); if(x && x.in <= 7) L.push(`${w} ${p.name} dalam ${x.in} hari (${x.date})`); } });
-  by('person').filter(p => Number(p.every) > 0 && (!isYmd(p.lastContact) || daysBetween(p.lastContact, t) >= Number(p.every))).slice(0, 2).forEach(p => L.push(`Lama tak hubungi ${p.name}${p.rel ? ' (' + p.rel + ')' : ''}`));
-  by('gift').filter(g => !g.done && isYmd(g.date) && g.date <= addDays(t, 7)).forEach(g => L.push(`${g.type || 'Majlis'}: ${g.title} pada ${g.date}`));
-  const h = by('habit').map(x => x.title); if(h.length) L.push(`Tabiat harian: ${h.join(', ')}`);
+  by('event').filter(i => i.date === t).sort((a, b) => (a.start || '').localeCompare(b.start || '')).forEach(i => L.push(`Event ${i.start || 'all day'}: ${i.title}${i.place ? ' @ ' + i.place : ''}`));
+  by('event').filter(i => i.date > t && i.date <= addDays(t, 2)).forEach(i => L.push(`Upcoming ${i.date} ${i.start || ''}: ${i.title}`));
+  by('reminder').filter(i => !i.done && String(i.at || '').slice(0, 10) <= t).forEach(i => L.push(`Reminder ${String(i.at).replace('T', ' ')}${String(i.at).slice(0, 10) < t ? ' (missed)' : ''}: ${i.title}`));
+  by('task').filter(i => !i.done && ((i.due && i.due <= t) || i.priority === 'tinggi')).forEach(i => L.push(`Task${i.priority === 'tinggi' ? ' [important]' : ''}${i.due ? ' due ' + i.due + (i.due < t ? ' (OVERDUE)' : '') : ''}: ${i.title}`));
+  by('waiting').filter(i => !i.done && (i.expect ? i.expect <= t : (isYmd(i.since) && daysBetween(i.since, t) >= 3))).forEach(i => L.push(`Chase ${i.who || 'someone'}: ${i.title}`));
+  by('payment').filter(i => !i.paid && i.due && i.due <= addDays(t, 3)).forEach(i => L.push(`Client payment ${i.client} ${money(i.amount)} ${i.due < t ? 'OVERDUE since' : 'due'} ${i.due}`));
+  by('bill').filter(b => (b.cycle !== 'tahunan' || Number(b.month) === Number(t.slice(5, 7))) && !(b.paid && b.paid[ym])).forEach(b => { const d = `${ym}-${pad(Math.min(Math.max(Number(b.day) || 1, 1), lastDay))}`; if(d <= addDays(t, 3)) L.push(`Bill ${b.title} ${money(b.amount)} on day ${b.day}${d < t ? ' (overdue)' : ''}`); });
+  by('renewal').filter(i => isYmd(i.date) && daysBetween(t, i.date) <= 14).forEach(i => L.push(`${i.title} expires on ${i.date}`));
+  by('person').forEach(p => { for(const [k, w] of [['birthday', 'Birthday'], ['anniv', 'Anniversary']]){ const x = nextAnnual(p[k], t); if(x && x.in <= 7) L.push(`${w} of ${p.name} in ${x.in} days (${x.date})`); } });
+  by('person').filter(p => Number(p.every) > 0 && (!isYmd(p.lastContact) || daysBetween(p.lastContact, t) >= Number(p.every))).slice(0, 2).forEach(p => L.push(`Haven't contacted ${p.name} in a while${p.rel ? ' (' + p.rel + ')' : ''}`));
+  by('gift').filter(g => !g.done && isYmd(g.date) && g.date <= addDays(t, 7)).forEach(g => L.push(`${g.type || 'Function'}: ${g.title} on ${g.date}`));
+  const h = by('habit').map(x => x.title); if(h.length) L.push(`Daily habits: ${h.join(', ')}`);
   const sp = exps.filter(e => !e.example && String(e.date || '').slice(0, 7) === ym && e.scope !== 'bisnes').reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const bud = items.find(i => i.id === 'cfg-budget');
-  if(bud && Number(bud.total) > 0) L.push(`Belanja peribadi bulan ini ${money(sp)} daripada bajet ${money(bud.total)} (${Math.round(sp / bud.total * 100)}%)`);
+  if(bud && Number(bud.total) > 0) L.push(`Personal spending this month ${money(sp)} of ${money(bud.total)} budget (${Math.round(sp / bud.total * 100)}%)`);
   return L;
 }
 function weeklyLines(items, exps, t){
   const L = [], real = items.filter(i => !i.example), by = k => real.filter(i => i.kind === k);
   const from = addDays(t, -6), to = addDays(t, 7);
   const inLast = ms => { if(!ms) return false; const d = ymdOf(new Date(Number(ms) + TZ_OFFSET_MIN * 60000)); return d >= from && d <= t; };
-  by('task').filter(i => i.done && inLast(i.doneAt)).forEach(i => L.push(`SIAP: ${i.title}`));
-  by('task').filter(i => !i.done && i.due && i.due < t).forEach(i => L.push(`LEWAT: ${i.title} (akhir ${i.due})`));
-  by('waiting').filter(i => i.done && inLast(i.doneAt)).forEach(i => L.push(`DITERIMA: ${i.title}`));
-  by('waiting').filter(i => !i.done && (i.expect ? i.expect < t : (isYmd(i.since) && daysBetween(i.since, t) > 3))).forEach(i => L.push(`MENUNGGU ${i.who || ''}: ${i.title}`));
-  by('payment').filter(i => i.paid && inLast(i.paidAt)).forEach(i => L.push(`BAYARAN DITERIMA: ${i.client} ${money(i.amount)}`));
-  const owed = by('payment').filter(i => !i.paid); if(owed.length) L.push(`TERTUNGGAK: ${owed.length} invois, ${money(owed.reduce((s, i) => s + (Number(i.amount) || 0), 0))}`);
-  by('habit').forEach(h => { let n = 0; for(let k = 0; k < 7; k++) if(h.log && h.log[addDays(t, -k)]) n++; L.push(`TABIAT ${h.title}: ${n}/7 hari`); });
-  by('goal').forEach(g => L.push(`MATLAMAT ${g.title}: ${Number(g.progress) || 0}%`));
-  by('event').filter(i => i.date > t && i.date <= to).forEach(i => L.push(`MINGGU DEPAN ${i.date} ${i.start || ''}: ${i.title}`));
-  by('task').filter(i => !i.done && i.due && i.due >= t && i.due <= to).forEach(i => L.push(`AKHIR MINGGU DEPAN ${i.due}: ${i.title}`));
-  by('renewal').filter(i => isYmd(i.date) && i.date <= addDays(t, 30)).forEach(i => L.push(`TAMAT ${i.date}: ${i.title}`));
+  by('task').filter(i => i.done && inLast(i.doneAt)).forEach(i => L.push(`DONE: ${i.title}`));
+  by('task').filter(i => !i.done && i.due && i.due < t).forEach(i => L.push(`OVERDUE: ${i.title} (due ${i.due})`));
+  by('waiting').filter(i => i.done && inLast(i.doneAt)).forEach(i => L.push(`RECEIVED: ${i.title}`));
+  by('waiting').filter(i => !i.done && (i.expect ? i.expect < t : (isYmd(i.since) && daysBetween(i.since, t) > 3))).forEach(i => L.push(`WAITING ON ${i.who || ''}: ${i.title}`));
+  by('payment').filter(i => i.paid && inLast(i.paidAt)).forEach(i => L.push(`PAYMENT RECEIVED: ${i.client} ${money(i.amount)}`));
+  const owed = by('payment').filter(i => !i.paid); if(owed.length) L.push(`OUTSTANDING: ${owed.length} invoices, ${money(owed.reduce((s, i) => s + (Number(i.amount) || 0), 0))}`);
+  by('habit').forEach(h => { let n = 0; for(let k = 0; k < 7; k++) if(h.log && h.log[addDays(t, -k)]) n++; L.push(`HABIT ${h.title}: ${n}/7 days`); });
+  by('goal').forEach(g => L.push(`GOAL ${g.title}: ${Number(g.progress) || 0}%`));
+  by('event').filter(i => i.date > t && i.date <= to).forEach(i => L.push(`NEXT WEEK ${i.date} ${i.start || ''}: ${i.title}`));
+  by('task').filter(i => !i.done && i.due && i.due >= t && i.due <= to).forEach(i => L.push(`DUE NEXT WEEK ${i.due}: ${i.title}`));
+  by('renewal').filter(i => isYmd(i.date) && i.date <= addDays(t, 30)).forEach(i => L.push(`EXPIRES ${i.date}: ${i.title}`));
   const sp = exps.filter(e => !e.example && e.date >= from && e.date <= t);
   if(sp.length){
-    const bc = {}; sp.forEach(e => { const k = EXP_CAT[e.cat] || 'Lain-lain'; bc[k] = (bc[k] || 0) + (Number(e.amount) || 0); });
-    L.push(`BELANJA 7 HARI: ${money(sp.reduce((s, e) => s + (Number(e.amount) || 0), 0))} (peribadi ${money(sp.filter(e => e.scope !== 'bisnes').reduce((s, e) => s + (Number(e.amount) || 0), 0))}, bisnes ${money(sp.filter(e => e.scope === 'bisnes').reduce((s, e) => s + (Number(e.amount) || 0), 0))}); terbanyak: ${Object.entries(bc).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => k + ' ' + money(v)).join(', ')}`);
+    const bc = {}; sp.forEach(e => { const k = EXP_CAT[e.cat] || 'Other'; bc[k] = (bc[k] || 0) + (Number(e.amount) || 0); });
+    L.push(`SPENDING 7 DAYS: ${money(sp.reduce((s, e) => s + (Number(e.amount) || 0), 0))} (personal ${money(sp.filter(e => e.scope !== 'bisnes').reduce((s, e) => s + (Number(e.amount) || 0), 0))}, business ${money(sp.filter(e => e.scope === 'bisnes').reduce((s, e) => s + (Number(e.amount) || 0), 0))}); top: ${Object.entries(bc).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => k + ' ' + money(v)).join(', ')}`);
   }
   return L;
 }
-const HARI = ['Ahad', 'Isnin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu'];
+const HARI = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 async function makeDigest(env, kind){
   await ensureSchema(env);
   const t = todayLocal(), d = nowLocal();
@@ -284,12 +284,12 @@ async function makeDigest(env, kind){
   const lines = kind === 'minggu' ? weeklyLines(flat, exps, t) : morningLines(flat, exps, t);
   if(kind !== 'minggu' && env.ARMEDIA_DB){ try { lines.push(...teamLines(await armediaFeed(env, t, t), t)); } catch(e){} }
   const prompt = kind === 'minggu'
-    ? `Sekarang ${HARI[d.getUTCDay()]}, ${t}. Tulis semakan mingguan dalam Bahasa Melayu santai dengan empat bahagian bertajuk ringkas: "Minggu ini" (2-3 baris apa yang berjaya), "Belanja" (1-2 baris), "Tersangkut" (poin "• "), dan "3 keutamaan minggu depan" (bernombor). Maksimum 17 baris. Jangan reka maklumat yang tiada dalam data.\n\nData:\n${lines.join('\n') || '(tiada data minggu ini)'}`
-    : `Sekarang ${HARI[d.getUTCDay()]}, ${t}, pagi. Tulis ringkasan pagi dalam Bahasa Melayu santai, maksimum 10 baris: satu baris salam pagi dengan tarikh, kemudian poin "• " disusun ikut paling mendesak dahulu (sebut masa jika ada), dan akhiri dengan satu cadangan apa nak buat dulu. Jangan reka maklumat. Jika senarai kosong, kata hari ini lapang dalam 2 baris.\n\nSenarai:\n${lines.join('\n') || '(kosong)'}`;
+    ? `It is now ${HARI[d.getUTCDay()]}, ${t}. Write a weekly review in friendly English with four sections with short headings: "This week" (2-3 lines on what went well), "Spending" (1-2 lines), "Stuck" ("• " points), and "3 priorities for next week" (numbered). At most 17 lines. Do not invent anything that is not in the data.\n\nData:\n${lines.join('\n') || '(no data this week)'}`
+    : `It is now ${HARI[d.getUTCDay()]}, ${t}, morning. Write a morning summary in friendly English, at most 10 lines: one good-morning line with the date, then "• " points ordered most urgent first (mention times where there are any), and end with one suggestion of what to do first. Do not invent anything. If the list is empty, say the day is free in 2 lines.\n\nList:\n${lines.join('\n') || '(empty)'}`;
   let text;
   const r = await askClaude(env, {input: prompt, tier: 'default', maxTokens: 1200});
   if(r.text) text = r.text.trim();
-  else text = (kind === 'minggu' ? 'Semakan mingguan' : 'Ringkasan pagi') + ` ${t}\n` + (lines.length ? lines.map(l => '• ' + l).join('\n') : 'Tiada apa-apa dalam senarai.');
+  else text = (kind === 'minggu' ? 'Weekly review' : 'Morning summary') + ` ${t}\n` + (lines.length ? lines.map(l => '• ' + l).join('\n') : 'Nothing on the list.');
   await setMeta(env, 'digest_' + kind, JSON.stringify({date: t, text, created: Date.now()}));
   return text;
 }
@@ -335,10 +335,10 @@ function teamLines(feed, t){
   feed.jobs.filter(j => j.date === t).sort((a, b) => a.time.localeCompare(b.time)).forEach(j => {
     if(seen.has(j.shoot)) return; seen.add(j.shoot); titles.push((j.time ? j.time + ' ' : '') + j.title);
   });
-  L.push(titles.length ? `Job team hari ini (${titles.length}): ${titles.join('; ')}` : 'Tiada job team hari ini');
+  L.push(titles.length ? `Team jobs today (${titles.length}): ${titles.join('; ')}` : 'No team jobs today');
   const CHECK = ['Tunggu approval client', 'Sedia untuk post'];
   const late = feed.jobs.filter(j => j.deadline && j.status !== 'Dipost' && !CHECK.includes(j.status) && j.deadline.slice(0, 10) < t);
-  if(late.length) L.push(`Video team lewat deadline: ${late.length} (semak dalam armedia.my)`);
+  if(late.length) L.push(`Team videos past deadline: ${late.length} (check in armedia.my)`);
   return L;
 }
 
@@ -428,9 +428,9 @@ async function post(path, body){
 function showErr(msg){ const e = $('.err'); e.textContent = msg; e.style.display = msg ? 'block' : 'none'; }
 document.querySelectorAll('.eye').forEach(b => b.addEventListener('click', () => {
   const i = b.previousElementSibling; const show = i.type === 'password';
-  i.type = show ? 'text' : 'password'; b.textContent = show ? 'Sorok' : 'Tunjuk';
+  i.type = show ? 'text' : 'password'; b.textContent = show ? 'Hide' : 'Show';
 }));`;
-const pageShell = (title, body, script) => `<!doctype html><html lang="ms"><head><meta charset="utf-8">
+const pageShell = (title, body, script) => `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#EDF0F8">
 <link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/favicon.png?v=3" type="image/png"><link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Hey Armay">
@@ -438,90 +438,90 @@ const pageShell = (title, body, script) => `<!doctype html><html lang="ms"><head
 <title>${title}</title><script>(function(){var t;try{t=localStorage.getItem("hy-theme")}catch(e){}document.documentElement.setAttribute("data-hy",t==="dark"?"dark":"light");})();</script><style>${PAGE_CSS}</style></head><body><main><div class="card">
 <div class="brand"><span class="logo" role="img" aria-label="Hey Armay"></span></div>
 ${body}</div></main><script>${PAGE_JS}${script}</script></body></html>`;
-const pwField = (id, ac, label) => `<label for="${id}">${label}</label><div class="f"><input id="${id}" type="password" autocomplete="${ac}" required><button type="button" class="eye">Tunjuk</button></div>`;
+const pwField = (id, ac, label) => `<label for="${id}">${label}</label><div class="f"><input id="${id}" type="password" autocomplete="${ac}" required><button type="button" class="eye">Show</button></div>`;
 function authPage(mode){
-  if(mode === 'closed') return pageShell('Log masuk', `<h1>Akaun belum disediakan</h1>
-<p class="lead">ID dan kata laluan belum dicipta lagi. Penyediaan pertama hanya boleh dibuat oleh pemilik melalui log masuk Cloudflare Access.</p>`, '');
+  if(mode === 'closed') return pageShell('Sign in', `<h1>Account not set up</h1>
+<p class="lead">The ID and password haven't been created yet. The first setup can only be done by the owner through a Cloudflare Access sign-in.</p>`, '');
   const setup = mode === 'setup';
-  return pageShell(setup ? 'Cipta log masuk' : 'Log masuk', `<h1>${setup ? 'Cipta log masuk' : 'Log masuk'}</h1>
-<p class="lead">${setup ? 'Pilih ID dan kata laluan. Lepas ini, anda akan log masuk dengan ID dan kata laluan ini sahaja.' : 'Masukkan ID dan kata laluan anda.'}</p>
+  return pageShell(setup ? 'Create sign-in' : 'Sign in', `<h1>${setup ? 'Create sign-in' : 'Sign in'}</h1>
+<p class="lead">${setup ? 'Choose an ID and password. From now on you will sign in with this ID and password only.' : 'Enter your ID and password.'}</p>
 <form id="f" novalidate>
-<label for="u">ID</label><input id="u" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required ${setup ? 'placeholder="contoh: armay"' : ''}>
-${setup ? '<div class="hint">3–40 aksara: huruf, nombor, titik, sengkang atau @.</div>' : ''}
-${pwField('p', setup ? 'new-password' : 'current-password', 'Kata laluan')}
-${setup ? '<div class="hint">Sekurang-kurangnya 8 aksara.</div>' + pwField('p2', 'new-password', 'Ulang kata laluan') : ''}
-<button class="go" type="submit">${setup ? 'Cipta & masuk' : 'Log masuk'}</button>
+<label for="u">ID</label><input id="u" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required ${setup ? 'placeholder="e.g. armay"' : ''}>
+${setup ? '<div class="hint">3–40 characters: letters, numbers, dot, dash or @.</div>' : ''}
+${pwField('p', setup ? 'new-password' : 'current-password', 'Password')}
+${setup ? '<div class="hint">At least 8 characters.</div>' + pwField('p2', 'new-password', 'Repeat password') : ''}
+<button class="go" type="submit">${setup ? 'Create & sign in' : 'Sign in'}</button>
 <div class="err" role="alert"></div></form>`, `
 const SETUP = ${setup};
 $('#f').addEventListener('submit', async ev => {
   ev.preventDefault(); showErr('');
   const u = $('#u').value.trim().toLowerCase(), p = $('#p').value;
-  if(!u || !p) return showErr('Isi ID dan kata laluan.');
+  if(!u || !p) return showErr('Enter your ID and password.');
   if(SETUP){
-    if(!/^[a-z0-9._@-]{3,40}$/.test(u)) return showErr('ID mesti 3–40 aksara: huruf, nombor, titik, sengkang atau @.');
-    if(p.length < 8) return showErr('Kata laluan mesti sekurang-kurangnya 8 aksara.');
-    if(p !== $('#p2').value) return showErr('Kata laluan tak sama. Taip semula.');
+    if(!/^[a-z0-9._@-]{3,40}$/.test(u)) return showErr('ID must be 3–40 characters: letters, numbers, dot, dash or @.');
+    if(p.length < 8) return showErr('Password must be at least 8 characters.');
+    if(p !== $('#p2').value) return showErr("Passwords don't match. Type them again.");
   }
-  const btn = $('.go'); btn.disabled = true; btn.textContent = 'Sebentar…';
+  const btn = $('.go'); btn.disabled = true; btn.textContent = 'One moment…';
   try {
     const r = await post(SETUP ? '/api/auth/setup' : '/api/auth/login', {user:u, key:await derive(u, p)});
     if(r.ok){ location.reload(); return; }
-    showErr(r.error === 'locked' ? 'Terlalu banyak cubaan salah. Cuba lagi selepas 15 minit.'
-      : r.error === 'wrong' ? 'ID atau kata laluan salah.'
-      : r.error === 'access' ? 'Penyediaan perlu log masuk Cloudflare Access. Muat semula halaman.'
-      : r.error === 'exists' ? 'Akaun sudah wujud. Muat semula untuk log masuk.'
-      : 'Tak berjaya. Cuba lagi.');
-  } catch(e){ showErr('Tiada sambungan. Cuba lagi.'); }
-  btn.disabled = false; btn.textContent = SETUP ? 'Cipta & masuk' : 'Log masuk';
+    showErr(r.error === 'locked' ? 'Too many wrong attempts. Try again in 15 minutes.'
+      : r.error === 'wrong' ? 'Wrong ID or password.'
+      : r.error === 'access' ? 'Setup needs a Cloudflare Access sign-in. Reload the page.'
+      : r.error === 'exists' ? 'The account already exists. Reload to sign in.'
+      : "That didn't work. Try again.");
+  } catch(e){ showErr('No connection. Try again.'); }
+  btn.disabled = false; btn.textContent = SETUP ? 'Create & sign in' : 'Sign in';
 });
 $('#u').focus();`);
 }
 function accountPage(user){
   const safe = String(user).replace(/[^a-z0-9._@-]/g, '');
-  return pageShell('Akaun', `<a href="/">← Kembali</a>
-<h1 style="margin-top:14px">Akaun</h1><p class="lead">Log masuk sebagai <b>${safe}</b></p>
-<section class="use" aria-labelledby="use-h"><h2 id="use-h">Kos Claude AI</h2>
-<div class="use-grid"><div><span>Hari ini</span><b id="u-today">…</b><small id="u-today-n"></small></div><div><span>Bulan ini</span><b id="u-month">…</b><small id="u-month-n"></small></div><div><span>Sejak mula</span><b id="u-all">…</b><small id="u-all-n"></small></div></div>
-<div class="use-bars" id="u-bars" aria-label="Kos 30 hari"></div><div class="use-axis"><span>30 hari lalu</span><span>Hari ini</span></div>
+  return pageShell('Account', `<a href="/">← Back</a>
+<h1 style="margin-top:14px">Account</h1><p class="lead">Signed in as <b>${safe}</b></p>
+<section class="use" aria-labelledby="use-h"><h2 id="use-h">Claude AI cost</h2>
+<div class="use-grid"><div><span>Today</span><b id="u-today">…</b><small id="u-today-n"></small></div><div><span>This month</span><b id="u-month">…</b><small id="u-month-n"></small></div><div><span>Since start</span><b id="u-all">…</b><small id="u-all-n"></small></div></div>
+<div class="use-bars" id="u-bars" aria-label="Cost over 30 days"></div><div class="use-axis"><span>30 days ago</span><span>Today</span></div>
 <div class="use-models" id="u-models"></div>
 <p class="hint" id="u-note"></p>
-<a class="use-link" href="https://platform.claude.com/dashboard" target="_blank" rel="noopener">Baki kredit & bil sebenar di Claude Console ↗</a></section>
-<hr><h2 class="pw-h">Tukar kata laluan</h2>
+<a class="use-link" href="https://platform.claude.com/dashboard" target="_blank" rel="noopener">Credit balance & actual billing in Claude Console ↗</a></section>
+<hr><h2 class="pw-h">Change password</h2>
 <form id="f" novalidate>
 <input type="text" name="username" autocomplete="username" value="${safe}" hidden>
-${pwField('o', 'current-password', 'Kata laluan semasa')}
-${pwField('n', 'new-password', 'Kata laluan baru')}
-${pwField('n2', 'new-password', 'Ulang kata laluan baru')}
-<button class="go" type="submit">Tukar kata laluan</button>
+${pwField('o', 'current-password', 'Current password')}
+${pwField('n', 'new-password', 'New password')}
+${pwField('n2', 'new-password', 'Repeat new password')}
+<button class="go" type="submit">Change password</button>
 <div class="err" role="alert"></div><div class="ok" role="status"></div></form>
-<hr><button class="ghost" id="out" type="button">Log keluar</button>`, `
+<hr><button class="ghost" id="out" type="button">Sign out</button>`, `
 const USER = ${JSON.stringify(safe)};
 $('#f').addEventListener('submit', async ev => {
   ev.preventDefault(); showErr(''); $('.ok').style.display = 'none';
   const o = $('#o').value, n = $('#n').value;
-  if(n.length < 8) return showErr('Kata laluan baru mesti sekurang-kurangnya 8 aksara.');
-  if(n !== $('#n2').value) return showErr('Kata laluan baru tak sama. Taip semula.');
-  const btn = $('.go'); btn.disabled = true; btn.textContent = 'Sebentar…';
+  if(n.length < 8) return showErr('The new password must be at least 8 characters.');
+  if(n !== $('#n2').value) return showErr("The new passwords don't match. Type them again.");
+  const btn = $('.go'); btn.disabled = true; btn.textContent = 'One moment…';
   try {
     const r = await post('/api/auth/password', {old:await derive(USER, o), key:await derive(USER, n)});
-    if(r.ok){ ev.target.reset(); const k = $('.ok'); k.textContent = 'Kata laluan ditukar. Peranti lain telah dilog keluar.'; k.style.display = 'block'; }
-    else showErr(r.error === 'wrong' ? 'Kata laluan semasa salah.' : r.error === 'locked' ? 'Terlalu banyak cubaan salah. Cuba lagi selepas 15 minit.' : 'Tak berjaya. Cuba lagi.');
-  } catch(e){ showErr('Tiada sambungan. Cuba lagi.'); }
-  btn.disabled = false; btn.textContent = 'Tukar kata laluan';
+    if(r.ok){ ev.target.reset(); const k = $('.ok'); k.textContent = 'Password changed. Other devices have been signed out.'; k.style.display = 'block'; }
+    else showErr(r.error === 'wrong' ? 'The current password is wrong.' : r.error === 'locked' ? 'Too many wrong attempts. Try again in 15 minutes.' : "That didn't work. Try again.");
+  } catch(e){ showErr('No connection. Try again.'); }
+  btn.disabled = false; btn.textContent = 'Change password';
 });
 $('#out').addEventListener('click', async () => { await post('/api/auth/logout', {}); location.href = '/'; });
 (async () => {
   try {
     const u = await (await fetch('/api/usage', {credentials:'same-origin', cache:'no-store'})).json();
     const rm = v => 'RM ' + (v < 0.01 && v > 0 ? v.toFixed(4) : v.toFixed(2));
-    const set = (k, o) => { $('#u-' + k).textContent = rm(o.rm); $('#u-' + k + '-n').textContent = o.calls + ' kali guna'; };
+    const set = (k, o) => { $('#u-' + k).textContent = rm(o.rm); $('#u-' + k + '-n').textContent = o.calls + ' uses'; };
     set('today', u.today); set('month', u.month); set('all', u.all);
     const mx = Math.max.apply(null, u.days.map(d => d.rm).concat([0.0001]));
-    $('#u-bars').innerHTML = u.days.map(d => '<i title="' + d.day + ': RM ' + d.rm.toFixed(4) + ' · ' + d.calls + ' kali" style="height:' + Math.max(2, Math.round(d.rm / mx * 100)) + '%"></i>').join('');
-    const nm = m => /haiku/.test(m) ? 'Haiku (pantas: kategori, tangkap cepat, resit)' : /sonnet/.test(m) ? 'Sonnet (susun suara & gambar, ringkasan)' : m;
+    $('#u-bars').innerHTML = u.days.map(d => '<i title="' + d.day + ': RM ' + d.rm.toFixed(4) + ' · ' + d.calls + ' uses" style="height:' + Math.max(2, Math.round(d.rm / mx * 100)) + '%"></i>').join('');
+    const nm = m => /haiku/.test(m) ? 'Haiku (fast: categories, quick capture, receipts)' : /sonnet/.test(m) ? 'Sonnet (voice & photo sorting, summaries)' : m;
     $('#u-models').innerHTML = u.models.map(x => '<div><span>' + nm(x.model) + '</span><b>' + rm(x.rm) + '</b></div>').join('');
-    $('#u-note').textContent = 'Anggaran ikut token sebenar setiap panggilan dan harga rasmi Claude. Kadar tukaran: 1 USD = RM ' + u.rate.toFixed(3) + (u.rateLive ? '' : ' (anggaran)') + '. Dikira sejak ' + u.since + '.';
-  } catch(e){ $('#u-note').textContent = 'Tak dapat memuatkan data penggunaan.'; }
+    $('#u-note').textContent = 'Estimated from the actual tokens of each call and official Claude pricing. Exchange rate: 1 USD = RM ' + u.rate.toFixed(3) + (u.rateLive ? '' : ' (estimate)') + '. Counted since ' + u.since + '.';
+  } catch(e){ $('#u-note').textContent = "Couldn't load usage data."; }
 })();`);
 }
 
@@ -534,12 +534,12 @@ async function handle(req, env, ctx){
   if(dg){
     await ensureSchema(env);
     const key = await getMeta(env, 'digest_key');
-    if(!key || key !== dg[1]) return T('Tidak dijumpai', 404);
+    if(!key || key !== dg[1]) return T('Not found', 404);
     const kind = dg[2];
     let row = await getMeta(env, 'digest_' + kind);
     let d = row ? JSON.parse(row) : null;
     if(!d || d.date !== todayLocal()) d = {date: todayLocal(), text: await makeDigest(env, kind)};
-    return T(d.text + '\n\nBuka: https://heyarmay.com' + (kind === 'minggu' ? '/#semakan' : '/'));
+    return T(d.text + '\n\nOpen: https://heyarmay.com' + (kind === 'minggu' ? '/#semakan' : '/'));
   }
 
   const PNGS = {'/icon-mask-192.png': ICON_MASK_192, '/icon-mask-512.png': ICON_MASK_512, '/favicon.png': ICON_64, '/favicon.svg': ICON_64, '/icon.svg': ICON_64, '/apple-touch-icon.png': ICON_180, '/logo.png': LOGO_PNG};
@@ -584,7 +584,7 @@ async function handle(req, env, ctx){
   }
   if(!await sessionOk(req, env)){
     if(p.startsWith('/api/') || p.startsWith('/_blob/')) return J({error: 'login'}, 401);
-    if(m !== 'GET' && m !== 'HEAD') return T('Log masuk dahulu', 401);
+    if(m !== 'GET' && m !== 'HEAD') return T('Sign in first', 401);
     const auth = await getAuth(env);
     const mode = auth ? 'login' : (await accessEmail(req, env)) ? 'setup' : 'closed';
     return new Response(authPage(mode), {headers: PAGE_HEADERS});
@@ -735,7 +735,7 @@ async function handle(req, env, ctx){
   if(fm){
     if(m === 'GET'){
       const r = await env.DB.prepare('SELECT type, data FROM files WHERE id = ?').bind(fm[1]).first();
-      if(!r) return T('Tidak dijumpai', 404);
+      if(!r) return T('Not found', 404);
       return new Response(r.data, {headers: {'content-type': r.type, 'cache-control': 'private, max-age=86400'}});
     }
     if(m === 'DELETE'){ await env.DB.prepare('DELETE FROM files WHERE id = ?').bind(fm[1]).run(); return new Response(null, {status: 204}); }
@@ -774,7 +774,7 @@ async function handle(req, env, ctx){
   }
   if(p === '/api/settings/rotate' && m === 'POST'){ const key = randomKey(); await setMeta(env, 'digest_key', key); return J({ok: true}); }
 
-  return T('Tidak dijumpai', 404);
+  return T('Not found', 404);
 }
 
 export default {

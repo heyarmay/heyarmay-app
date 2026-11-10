@@ -5,7 +5,7 @@
 
   async function api(path, opts){
     const r = await fetch(path, Object.assign({credentials:'same-origin'}, opts || {}));
-    if(r.status === 401 || r.status === 403){ location.reload(); throw {code:'revoked', message:'Sesi tamat'}; }
+    if(r.status === 401 || r.status === 403){ location.reload(); throw {code:'revoked', message:'Session expired'}; }
     if(!r.ok){
       let msg = ''; try { msg = await r.text(); } catch(e){}
       throw {code: r.status === 413 ? 'quota_exceeded' : r.status === 404 ? 'invalid_argument' : r.status === 429 ? 'resource_exhausted' : 'unavailable', message: msg};
@@ -77,7 +77,7 @@
     let r;
     try { r = await fetch('/api/claude', Object.assign(json('POST', body), {signal: opts.signal, credentials:'same-origin'})); }
     catch(e){ throw (e && e.name === 'AbortError') ? {code:'cancelled', message:'cancelled'} : {code:'upstream_error', message:String(e)}; }
-    if(r.status === 401 || r.status === 403){ location.reload(); throw {code:'not_granted', message:'Sesi tamat'}; }
+    if(r.status === 401 || r.status === 403){ location.reload(); throw {code:'not_granted', message:'Session expired'}; }
     if(!r.ok){
       let m = ''; try { m = await r.text(); } catch(e){}
       throw {code: r.status === 429 ? 'rate_limited' : r.status === 503 ? 'sampling_disabled' : r.status === 400 ? 'invalid_request' : 'upstream_error', message:m};
@@ -90,7 +90,7 @@
   sample.json = async (input, opts) => {
     const r = await callClaude(input, opts, true);
     const v = parseLoose(r.text);
-    if(v === undefined) throw {code:'invalid_json', message:'Jawapan bukan JSON', text:r.text};
+    if(v === undefined) throw {code:'invalid_json', message:'Response was not JSON', text:r.text};
     return v;
   };
   sample.limits = async () => ({maxPromptBytes:262144, images:{maxCount:6, maxInputBytes:20e6, mediaTypes:['image/jpeg','image/png','image/webp','image/gif']}, tools:null});
@@ -129,7 +129,7 @@
     st.textContent = '.side-top .brand{display:flex;align-items:center}.side-top .brand .acct{margin-left:auto;font:600 .75rem/1 var(--f-body,system-ui);color:var(--muted);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:5px 10px;letter-spacing:0;text-transform:none}.side-top .brand .acct:hover{color:var(--accent);border-color:var(--accent)}';
     document.head.appendChild(st);
     const a = document.createElement('a');
-    a.className = 'acct'; a.href = '/akaun'; a.textContent = 'Akaun';
+    a.className = 'acct'; a.href = '/akaun'; a.textContent = 'Account';
     brand.appendChild(a);
   });
 })();
