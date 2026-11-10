@@ -1915,13 +1915,14 @@ function micToggle(){
 }
 
 /* ---------- cakap & susun ---------- */
-const VKIND = {task:['Tugasan','task'], reminder:['Peringatan','rem'], event:['Acara','ev'], waiting:['Menunggu','ev'], idea:['Idea','plum'], expense:['Belanja',''], note:['Nota','']};
+const VKIND = {renewal:['Tarikh Tamat','late'], task:['Tugasan','task'], reminder:['Peringatan','rem'], event:['Acara','ev'], waiting:['Menunggu','ev'], idea:['Idea','plum'], expense:['Belanja',''], note:['Nota','']};
 function voiceWhen(a){
   if(a.kind==='event') return fmtD(a.date) + (a.start ? ' ' + fmtT(a.start) : '');
   if(a.kind==='reminder') return fmtD(a.at.slice(0,10)) + ' ' + fmtT(a.at.slice(11));
   if(a.kind==='task') return [a.due ? fmtD(a.due) : '', a.priority==='tinggi' ? 'penting' : ''].filter(Boolean).join(' · ');
   if(a.kind==='waiting') return [a.who, a.expect ? 'jangka ' + fmtD(a.expect) : ''].filter(Boolean).join(' · ');
   if(a.kind==='expense') return money(a.amount) + ' · ' + catName(a.cat) + (a.scope==='bisnes' ? ' · bisnes' : '');
+  if(a.kind==='renewal') return 'tamat ' + fmtD(a.date);
   return '';
 }
 function renderVoice(){
@@ -1999,7 +2000,9 @@ Tugas:
 - "waiting": orang lain perlu hantar atau siapkan sesuatu. title, who, expect (YYYY-MM-DD atau "")
 - "expense": duit yang sudah dibelanjakan. amount (nombor RM), note, cat (${EXP_CAT.map(c => c[0]).join('|')}), scope ("bisnes" jika untuk kerja/syarikat/klien/shooting, selain itu "peribadi"), date (YYYY-MM-DD)
 - "idea": idea video, perniagaan, klien atau pakej. title, tag ("video"|"klien"|"pakej"|"lain"), body
+- "renewal": sesuatu yang ada TARIKH TAMAT / LUPUT / EXPIRED dan perlu diperbaharui (roadtax, insurans, lesen memandu, pasport, IC, domain, hosting, langganan, sijil, permit, sewa). title (cth "Roadtax & insurans VQV355"), date (tarikh tamat YYYY-MM-DD), category ("kenderaan"|"dokumen"|"domain"|"insurans"|"langganan"|"lain"), cost (nombor RM atau null), notes (butiran ringkas: tarikh mula, syarikat insurans, no. polisi)
 - "note": maklumat untuk disimpan sahaja. title, body
+Peraturan tambahan: Apa-apa yang ada tarikh tamat/luput WAJIB jadi "renewal" (bukan "note"), satu item bagi setiap perkara (cth setiap kenderaan). Jika pengguna minta diingatkan sebelum tamat (cth "seminggu sebelum"), tambah juga satu "reminder" bagi setiap item pada tarikh itu jam 09:00 dengan title "Perbaharui ..." — hanya jika tarikh peringatan itu belum lepas. Jika sudah tamat, tambah "task" priority "tinggi" untuk perbaharui.
 Tajuk ringkas dan jelas dalam bahasa pengguna. Jangan reka tarikh, masa, nama atau jumlah yang tidak disebut. Balas JSON sahaja:
 {"summary":"...","items":[{"kind":"task","title":"...","due":null,"priority":"biasa"}]}
 
@@ -2086,11 +2089,12 @@ function cleanItem(r, fallback){
   if(k==='reminder' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(r.at||'')) return {kind:'reminder', title:T, at:r.at.slice(0,16), repeat:['harian','mingguan'].includes(r.repeat)?r.repeat:'tiada', done:false};
   if(k==='event' && isYmd(r.date)) return {kind:'event', title:T, date:r.date, start:/^\d{2}:\d{2}$/.test(r.start||'')?r.start:'', end:/^\d{2}:\d{2}$/.test(r.end||'')?r.end:'', place:String(r.place||'')};
   if(k==='waiting') return {kind:'waiting', title:T, who:String(r.who||''), since:today(), expect:isYmd(r.expect)?r.expect:'', done:false};
+  if(k==='renewal' && isYmd(r.date)) return {kind:'renewal', title:T, date:r.date, category:REN_CAT.some(c => c[0]===r.category)?r.category:'lain', cost:numOrNull(r.cost), notes:String(r.notes||'').slice(0,500)};
   if(k==='idea') return {kind:'idea', title:T, tag:['video','klien','pakej'].includes(r.tag)?r.tag:'lain', status:'baru', body:String(r.body||'')};
   if(k==='expense' && Number(r.amount) > 0) return {kind:'expense', amount:Math.round(Number(r.amount)*100)/100, note:String(r.note||r.title||fallback).slice(0,120), cat:EXP_CAT.some(c => c[0]===r.cat)?r.cat:'lain', scope:r.scope==='bisnes'?'bisnes':'peribadi', date:isYmd(r.date) && r.date<=today() ? r.date : today(), method:''};
   return null;
 }
-const KIND_L = {task:'Tugasan', reminder:'Peringatan', event:'Acara', note:'Nota', waiting:'Menunggu', idea:'Idea', expense:'Belanja'};
+const KIND_L = {renewal:'Tarikh Tamat', task:'Tugasan', reminder:'Peringatan', event:'Acara', note:'Nota', waiting:'Menunggu', idea:'Idea', expense:'Belanja'};
 async function capture(text, kind){
   if(kind==='auto' && sample){
     $('#cap-btn').disabled = true; $('#cap-btn').textContent = 'Menyusun…';
@@ -2105,6 +2109,7 @@ Jenis:
 - "waiting": pengguna menunggu sesuatu daripada orang lain ("tunggu", "X kena hantar", "X janji siap"). Medan: title, who, expect (YYYY-MM-DD atau "")
 - "idea": idea video, idea perniagaan, klien sasaran atau pakej jualan. Medan: title, tag ("video"|"klien"|"pakej"|"lain"), body
 - "expense": duit yang sudah dibelanjakan, ada jumlah RM (cth "makan tengah hari 15", "isi minyak rm50", "semalam beli barang dapur 120"). Medan: amount (nombor), note (untuk apa, ringkas), cat (${EXP_CAT.map(c => c[0]).join('|')}), scope ("bisnes" jika untuk kerja/syarikat/FuyohhTV/klien/shooting, selain itu "peribadi"), date (YYYY-MM-DD, lalai hari ini)
+- "renewal": ada tarikh tamat/luput yang perlu diperbaharui (roadtax, insurans, lesen, pasport, domain, langganan). Medan: title, date (tarikh tamat YYYY-MM-DD), category ("kenderaan"|"dokumen"|"domain"|"insurans"|"langganan"|"lain"), cost (nombor atau null), notes
 - "note": maklumat atau catatan lain. Medan: title (pendek), body (teks penuh)
 Tajuk ringkas dan jelas dalam bahasa asal pengguna. Balas JSON sahaja, contoh:
 {"kind":"event","title":"Jumpa klien","date":"2026-10-25","start":"15:00","end":"","place":"SS2"}
