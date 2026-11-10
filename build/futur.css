@@ -1,0 +1,231 @@
+/* Hey Armay — lapisan reka bentuk "bilik kawalan", dua tema.
+   Terang ("mutiara"): kaca putih, aurora pastel, garis biru halus. Gelap: kaca nila.
+   Satu kecerunan ion→iris; ia bergerak hanya pada kotak tangkap (tindakan utama). */
+@property --ang{syntax:'<angle>';inherits:false;initial-value:0deg}
+
+/* ---------- token: terang ---------- */
+:root[data-hy="light"]{
+  --bg:#EDF0F8; --surface:rgba(255,255,255,.74); --field:rgba(244,246,252,.9); --ink:#11152B; --muted:#5B6385; --line:rgba(36,48,110,.11);
+  --accent:#0C8F80; --accent-soft:rgba(13,148,136,.10); --on-accent:#FFFFFF;
+  --iris:#5E4FE6;
+  --sun:#A8650A; --sun-soft:#FBEFD6; --sky:#2A63C7; --sky-soft:#E1EAFB;
+  --rose:#C53352; --rose-soft:#FBE3E8; --plum:#7A45C2; --plum-soft:#EFE6FB;
+  --shadow:0 24px 60px rgba(30,40,100,.16);
+  --grad:linear-gradient(120deg,#0D9488 0%,#3E7BEA 55%,#6A54EC 100%);
+  --solid:#FFFFFF;
+  --glow:13,148,136; --glow2:94,79,230; --lineRGB:36,48,110;
+  --aurA:rgba(45,212,191,.26); --aurB:rgba(124,108,247,.22); --aurC:rgba(96,165,250,.20);
+  --gridline:rgba(40,60,150,.055);
+  --glass:rgba(255,255,255,.58); --glass-strong:rgba(250,251,255,.94); --band:rgba(255,255,255,.72);
+  --hover:rgba(40,60,150,.05); --btn:rgba(255,255,255,.75); --chipbg:rgba(255,255,255,.7);
+  --sheet:rgba(255,255,255,.97); --scrim:rgba(20,26,60,.28); --toast:rgba(17,21,43,.92); --toast-ink:#F2F5FF;
+  --inset:inset 0 1px 0 rgba(255,255,255,.9); --lift:0 1px 2px rgba(30,40,100,.05),0 8px 24px rgba(30,40,100,.06);
+  --on-ink:#FFFFFF; --org:#C2410C; --org-soft:#FDE8DA;
+  color-scheme:light;
+}
+/* ---------- token: gelap ---------- */
+:root[data-hy="dark"]{
+  --bg:#080B1C; --surface:rgba(20,25,56,.66); --field:rgba(128,146,255,.07); --ink:#E8ECFF; --muted:#8D95C6; --line:rgba(150,170,255,.15);
+  --accent:#5EEAD4; --accent-soft:rgba(94,234,212,.13); --on-accent:#04201B;
+  --iris:#9C8EFF;
+  --sun:#FFC66E; --sun-soft:rgba(255,198,110,.14); --sky:#79BDFF; --sky-soft:rgba(121,189,255,.14);
+  --rose:#FF7D96; --rose-soft:rgba(255,125,150,.14); --plum:#CDA6FF; --plum-soft:rgba(205,166,255,.14);
+  --shadow:0 24px 70px rgba(0,0,0,.55);
+  --grad:linear-gradient(120deg,#5EEAD4 0%,#86B4FF 55%,#9C8EFF 100%);
+  --solid:#11152F;
+  --glow:94,234,212; --glow2:156,142,255; --lineRGB:150,170,255;
+  --aurA:rgba(94,234,212,.17); --aurB:rgba(156,142,255,.20); --aurC:rgba(121,189,255,.11);
+  --gridline:rgba(150,170,255,.06);
+  --glass:rgba(9,12,30,.55); --glass-strong:rgba(13,17,40,.94); --band:rgba(9,12,30,.74);
+  --hover:rgba(128,146,255,.07); --btn:rgba(255,255,255,.04); --chipbg:rgba(255,255,255,.03);
+  --sheet:rgba(17,21,47,.97); --scrim:rgba(4,6,18,.6); --toast:rgba(20,25,60,.94); --toast-ink:#E8ECFF;
+  --inset:inset 0 1px 0 rgba(255,255,255,.04); --lift:none;
+  --on-ink:#0A0D20; --org:#FFA45C; --org-soft:rgba(255,164,92,.15);
+  color-scheme:dark;
+}
+:root{--ease:cubic-bezier(.2,.8,.2,1);
+  --f-head:'Geist',-apple-system,system-ui,'Segoe UI',Roboto,sans-serif; --f-display:var(--f-head); --f-body:var(--f-head);
+  --f-mono:'Geist',-apple-system,system-ui,sans-serif; --f-clock:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace}
+body{font-size:15px;line-height:1.55;text-rendering:optimizeLegibility;font-feature-settings:"ss01" 0}
+.mono,.amt,.row .time,.stat b,.nav .n,.cal .d .dn,.daxis,.amtin,.vch .ref,.vch .n,.tile .u,.dateblock .day{font-variant-numeric:tabular-nums}
+.stat b{font-weight:600;letter-spacing:-.01em}
+
+html{background:var(--bg);transition:background-color .4s var(--ease)}
+body{background:transparent;-webkit-font-smoothing:antialiased}
+::selection{background:rgba(var(--glow),.25)}
+*{scrollbar-width:thin;scrollbar-color:rgba(var(--lineRGB),.25) transparent}
+
+/* Latar: aurora + grid HUD yang pudar ke tepi */
+body::before{content:"";position:fixed;inset:-25%;z-index:-2;pointer-events:none;
+  background:
+    radial-gradient(38% 32% at 18% 14%,var(--aurA),transparent 70%),
+    radial-gradient(34% 30% at 86% 8%,var(--aurB),transparent 70%),
+    radial-gradient(44% 38% at 62% 96%,var(--aurC),transparent 70%);
+  animation:hy-drift 46s ease-in-out infinite alternate, hy-fade 1.4s ease both}
+body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.6;
+  background-image:linear-gradient(var(--gridline) 1px,transparent 1px),linear-gradient(90deg,var(--gridline) 1px,transparent 1px);
+  background-size:56px 56px;
+  -webkit-mask-image:radial-gradient(70% 60% at 50% 30%,#000 10%,transparent 75%);mask-image:radial-gradient(70% 60% at 50% 30%,#000 10%,transparent 75%)}
+
+/* Tipografi */
+h1{font-family:var(--f-head);font-weight:650;letter-spacing:-.025em;font-size:1.75rem;line-height:1.15}
+h2{font-family:var(--f-body);font-weight:600;letter-spacing:-.015em}
+h3,.nav .g,.dayhead,.ckg,.cal .wk div{text-transform:none;letter-spacing:-.005em;font-size:.8rem}
+h3{color:var(--muted);font-weight:600}
+.brand{font-family:var(--f-body);font-weight:650;font-size:1rem;letter-spacing:-.02em;white-space:nowrap}
+.brand i{width:12px;height:12px;border-radius:4px;background:var(--grad);box-shadow:0 0 14px rgba(var(--glow),.5);transform:rotate(45deg)}
+.dateblock .day{font-family:var(--f-head);font-weight:600;letter-spacing:-.04em}
+.dateblock .clock{font-family:var(--f-clock);color:var(--accent);text-shadow:0 0 12px rgba(var(--glow),.35)}
+
+/* Rel sisi: kaca */
+.side{background:var(--glass);-webkit-backdrop-filter:blur(18px) saturate(140%);backdrop-filter:blur(18px) saturate(140%);border-color:var(--line)}
+.nav a{border-radius:10px;transition:background-color .18s var(--ease),color .18s}
+.nav a:hover{background:var(--hover)}
+.nav a.on{background:linear-gradient(90deg,rgba(var(--glow),.15),rgba(var(--glow2),.06));color:var(--ink);box-shadow:inset 2px 0 0 var(--accent)}
+.nav a.on .n{color:var(--accent)}
+
+/* Kotak tangkap: satu-satunya elemen yang "hidup" */
+.capture{position:relative;border:1px solid transparent;border-radius:16px;padding:7px;
+  background:linear-gradient(var(--solid),var(--solid)) padding-box,
+             conic-gradient(from var(--ang),rgb(var(--glow)),#86B4FF,rgb(var(--glow2)),rgba(var(--glow),.15),rgb(var(--glow))) border-box;
+  box-shadow:0 10px 40px rgba(var(--lineRGB),.18);
+  animation:hy-spin 9s linear infinite;transition:box-shadow .3s var(--ease)}
+.capture:focus-within{box-shadow:0 10px 40px rgba(var(--lineRGB),.18),0 0 32px rgba(var(--glow),.22)}
+.capture input{font-size:1rem}
+.capture input::placeholder{color:var(--muted)}
+.capture select{background:var(--field);border-radius:10px}
+
+/* Permukaan */
+.panel,.note-c,.tile,.conn,.cal{background:var(--surface);border-color:var(--line);border-radius:16px;box-shadow:var(--inset),var(--lift)}
+:root[data-hy="light"] .panel,:root[data-hy="light"] .note-c,:root[data-hy="light"] .tile,:root[data-hy="light"] .cal,:root[data-hy="light"] .conn{-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.note-c,.tile{transition:border-color .2s,transform .2s var(--ease)}
+.note-c:hover,.tile:hover{border-color:rgba(var(--glow),.4)}
+.row{border-radius:10px;border-color:var(--line)}
+.row:hover,.ck:hover,.catr:hover,.meetres label:hover{background:var(--hover)}
+.summary{background:linear-gradient(135deg,rgba(var(--glow),.10),rgba(var(--glow2),.08));border:1px solid rgba(var(--glow),.22)}
+.summary.idle{background:rgba(var(--lineRGB),.04);border:1px dashed var(--line)}
+.banner{background:var(--sun-soft);border:1px solid rgba(214,150,40,.25)}
+
+/* Butang & medan */
+.btn{background:var(--btn);border-color:var(--line);border-radius:10px;transition:border-color .18s,background-color .18s,box-shadow .2s,transform .12s var(--ease)}
+.btn:hover{border-color:rgba(var(--lineRGB),.4)}
+.btn:active{transform:scale(.97)}
+.btn.pri{background:var(--grad);border-color:transparent;color:var(--on-accent)}
+.btn.pri:hover{filter:none;box-shadow:0 0 22px rgba(var(--glow),.35)}
+.btn.ghost{background:transparent}
+.btn.danger.arm{color:#fff}
+input.f,select.f,textarea.f{background:var(--field);border-color:var(--line);border-radius:10px;transition:border-color .18s,box-shadow .18s}
+input.f:focus,select.f:focus,textarea.f:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--glow),.15)}
+select option{background:var(--solid);color:var(--ink)}
+.filters button,.seg button,.hchip{background:var(--chipbg);border-color:var(--line)}
+.filters button.on,.seg button.on{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+.hchip.on{background:var(--grad);border-color:transparent;color:var(--on-accent)}
+.chk.on{background:var(--accent);box-shadow:0 0 10px rgba(var(--glow),.4)}
+.chk.on::after{border-color:var(--on-accent)}
+
+/* Data */
+.bar{background:rgba(var(--lineRGB),.08);border-color:var(--line)}
+.bar i{background:var(--grad)}
+.dchart button i{background:linear-gradient(180deg,rgb(var(--glow)),rgba(var(--glow2),.6))}
+.dchart button.td i{background:var(--sun)}
+.strip i{background:rgba(var(--lineRGB),.06);border-color:var(--line)}
+.strip i.on{background:var(--accent);border-color:var(--accent);box-shadow:0 0 8px rgba(var(--glow),.4)}
+.stat b{color:var(--ink)}
+.cal .d{background:transparent;border-color:var(--line)}
+.cal .d.out{background:rgba(var(--lineRGB),.035)}
+.cal .d.today .dn{background:var(--grad);color:var(--on-accent)}
+.cal .ch,.cal .d{border-color:var(--line)}
+
+/* Modal & notis */
+#modal{background:var(--scrim);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);animation:hy-fade .2s ease both}
+.sheet{background:var(--sheet);border-color:rgba(var(--lineRGB),.2);border-radius:20px;animation:hy-sheet .34s var(--ease) both}
+#toast{background:var(--toast);color:var(--toast-ink);border:1px solid rgba(var(--glow),.3);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-radius:12px;animation:hy-toast .32s var(--ease) both}
+
+/* Rekod rasmi kekal seperti kertas (untuk cetak/PDF) */
+.vch{--surface:#FFFFFF;--ink:#16201B;--muted:#5B6A62;--line:#DBE3DC;--field:#F7F9F6;background:#fff;color:#16201B;border-radius:6px}
+
+/* Rakaman suara aktif: denyut cincin */
+[data-act="vz-mic"].arm{position:relative;animation:hy-pulse 1.6s ease-out infinite}
+
+/* Logo */
+.hy-logo{display:block;height:36px;aspect-ratio:2857/1197;flex:0 0 auto;background:var(--ink);
+  -webkit-mask:url(/logo.png) left center/contain no-repeat;mask:url(/logo.png) left center/contain no-repeat}
+.side-top .brand i{display:none}
+.side-top .brand{gap:8px;font-size:0}
+.side-top .brand .acct{font-size:.75rem;margin-left:auto}
+@media (min-width:821px){.side-top .brand{margin-bottom:18px}.hy-logo{height:40px}}
+
+/* Akaun + tukar tema */
+.side-top .brand .acct{background:var(--btn)}
+.hy-theme{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:999px;border:1px solid var(--line);background:var(--btn);color:var(--muted);cursor:pointer;padding:0;margin-left:6px;transition:color .2s,border-color .2s,transform .4s var(--ease)}
+.hy-theme:hover{color:var(--accent);border-color:rgba(var(--glow),.5)}
+.hy-theme:active{transform:rotate(40deg) scale(.94)}
+.hy-theme svg{width:15px;height:15px}
+:root[data-hy="light"] .hy-theme .sun,:root[data-hy="dark"] .hy-theme .moon{display:none}
+
+/* Gerakan: muat halaman & tukar bahagian */
+.side{animation:hy-in-left .7s var(--ease) both}
+#view.hy-vt .hy-a{animation:hy-rise .46s var(--ease) both;animation-delay:calc(var(--hy-i,0) * 45ms)}
+/* Tukar tema: palitan warna lembut */
+:root.hy-swap *,:root.hy-swap *::before,:root.hy-swap *::after{transition:background-color .45s var(--ease),border-color .45s var(--ease),color .45s var(--ease),box-shadow .45s var(--ease)!important}
+
+@keyframes hy-drift{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(3%,-2%,0) scale(1.06)}100%{transform:translate3d(-2%,3%,0) scale(1)}}
+@keyframes hy-fade{from{opacity:0}to{opacity:1}}
+@keyframes hy-spin{to{--ang:360deg}}
+@keyframes hy-rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes hy-in-left{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
+@keyframes hy-sheet{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes hy-toast{from{opacity:0;transform:translate(-50%,14px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes hy-pulse{0%{box-shadow:0 0 0 0 rgba(255,125,150,.55)}100%{box-shadow:0 0 0 14px rgba(255,125,150,0)}}
+
+/* Telefon: bar atas melekat + laci sisi */
+.hy-burger{display:none}
+#hy-scrim{display:none}
+@media (max-width:820px){
+  h1{font-size:1.45rem}
+  .side{position:sticky;top:0;z-index:30;background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;animation-name:hy-fade;
+    padding-block:calc(10px + env(safe-area-inset-top,0px)) 10px;gap:0;border-bottom:1px solid var(--line)}
+  .side::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--band);-webkit-backdrop-filter:blur(18px) saturate(140%);backdrop-filter:blur(18px) saturate(140%)}
+  .side-top{align-items:center}
+  .brand{gap:10px}
+  .dateblock{display:flex;flex-direction:column;align-items:flex-end;gap:0}
+  .dateblock .day{font-size:1.15rem;line-height:1.1}
+  .dateblock .dl{font-size:.72rem;color:var(--muted);font-weight:500;margin:0}
+  .dateblock .hj,.dateblock .clock{display:none}
+
+  .hy-burger{display:inline-grid;place-items:center;width:40px;height:40px;margin-left:-6px;border-radius:12px;border:1px solid var(--line);background:var(--btn);cursor:pointer;padding:0;color:var(--ink)}
+  .hy-burger span{display:block;width:16px;height:2px;border-radius:2px;background:currentColor;position:relative;transition:background-color .2s}
+  .hy-burger span::before,.hy-burger span::after{content:"";position:absolute;left:0;width:16px;height:2px;border-radius:2px;background:currentColor;transition:transform .32s var(--ease),top .32s var(--ease)}
+  .hy-burger span::before{top:-5px} .hy-burger span::after{top:5px}
+  body.hy-open .hy-burger span{background:transparent}
+  body.hy-open .hy-burger span::before{top:0;transform:rotate(45deg)}
+  body.hy-open .hy-burger span::after{top:0;transform:rotate(-45deg)}
+  .brand i{display:none}
+  .hy-logo{height:30px}
+  .hy-theme{margin-left:2px}
+
+  .nav{position:fixed;z-index:45;top:0;bottom:0;left:0;width:min(82vw,300px);margin:0;flex:none;
+    flex-direction:column;overflow-y:auto;overflow-x:hidden;gap:2px;scrollbar-width:thin;
+    padding:calc(18px + env(safe-area-inset-top,0px)) 14px calc(24px + env(safe-area-inset-bottom,0px)) max(14px,env(safe-area-inset-left,0px));
+    background:var(--glass-strong);-webkit-backdrop-filter:blur(22px) saturate(150%);backdrop-filter:blur(22px) saturate(150%);
+    border-right:1px solid rgba(var(--lineRGB),.18);box-shadow:24px 0 60px rgba(0,0,0,.25);
+    transform:translateX(-104%);visibility:hidden;transition:transform .36s var(--ease),visibility 0s linear .36s}
+  body.hy-open .nav{transform:none;visibility:visible;transition:transform .36s var(--ease),visibility 0s}
+  .nav::before{content:"Menu";display:block;font:650 1.1rem/1 var(--f-head);letter-spacing:-.02em;color:var(--ink);padding:6px 10px 14px}
+  .nav .g{display:block;padding:14px 10px 4px}
+  .nav a{padding:11px 12px;white-space:normal;font-size:1rem}
+  .nav a.on{box-shadow:inset 2px 0 0 var(--accent)}
+
+  #hy-scrim{display:block;position:fixed;inset:0;z-index:25;background:var(--scrim);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+    opacity:0;pointer-events:none;transition:opacity .3s var(--ease)}
+  body.hy-open #hy-scrim{opacity:1;pointer-events:auto}
+  body.hy-open{overflow:hidden}
+
+  .capture{flex-wrap:wrap}
+  .capture input{flex:1 1 100%;padding:10px 10px 6px}
+  .capture select{flex:1 1 auto;max-width:none;min-height:42px}
+  .capture .btn{min-height:42px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}

@@ -1,0 +1,15 @@
+{
+  // Hey Armay — Cloudflare Worker untuk heyarmay.com
+  // Dikemas kini automatik oleh Cloudflare Workers Builds setiap kali kod ditolak ke cawangan main.
+  "name": "heyarmay",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-09-01",
+  "workers_dev": true,
+  "routes": [{ "pattern": "*heyarmay.com/*", "zone_name": "heyarmay.com" }],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "heyarmay-db", "database_id": "81d01a6d-780c-4c80-8832-be9340ff219c" },
+    { "binding": "ARMEDIA_DB", "database_name": "armedia-db", "database_id": "4caa9de2-419f-4e16-908a-42bac7668ebb" }
+  ],
+  "vars": { "ALLOWED_EMAIL": "armayclaude@gmail.com" },
+  "observability": { "enabled": true }
+}
