@@ -282,6 +282,13 @@ select option{background:var(--solid);color:var(--ink)}
 }
 @keyframes hy-up{from{transform:translateY(100%)}to{transform:none}}
 
+/* Gambar dalam Cakap & susun / editor */
+.vz-pic{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.vz-pic img{max-width:min(100%,320px);max-height:240px;border-radius:12px;border:1px solid var(--line);object-fit:contain;background:var(--field)}
+.ed-img{max-width:100%;max-height:320px;border-radius:12px;border:1px solid var(--line);object-fit:contain;align-self:flex-start}
+#cap-pic{cursor:pointer}
+label.btn{cursor:pointer}
+
 /* ---------- HUD "Jarvis" ---------- */
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .hud{position:relative;display:grid;grid-template-columns:190px minmax(0,1fr);gap:8px 22px;align-items:center;padding:18px 20px 14px;border-radius:18px;

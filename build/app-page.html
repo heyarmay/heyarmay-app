@@ -297,6 +297,7 @@ a.row{color:inherit;text-decoration:none}
       <form class="capture" id="capture" autocomplete="off">
         <input id="cap-in" placeholder="Tulis apa sahaja… cth: esok 3 petang jumpa klien kedai kopi SS2" aria-label="Tangkap cepat">
         <button type="button" class="btn" id="cap-voice" data-act="voice" aria-label="Cakap dan susun" title="Cakap & susun"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></button>
+        <label class="btn" id="cap-pic" title="Gambar atau tangkapan skrin" aria-label="Tambah gambar atau tangkapan skrin"><input type="file" id="pic-file" accept="image/*" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg></label>
         <select id="cap-kind" aria-label="Jenis">
           <option value="auto">Auto (Claude)</option>
           <option value="task">Tugasan</option>
@@ -1882,6 +1883,7 @@ function openEditor(i){
   const m = $('#modal');
   m.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="Ubah ${label}">
     <div style="display:flex;justify-content:space-between;align-items:center"><h2>${label}</h2><button class="btn ghost sm" data-act="close">Tutup</button></div>
+    ${i.imgId ? `<img class="ed-img" src="/_blob/${esc(i.imgId)}" alt="Gambar asal" loading="lazy">` : ''}
     <div class="fields">${fields.map(f => fieldHtml(f, i[f[0]])).join('')}</div>
     ${i.kind==='event'&&i.date?`<a class="btn sm" style="align-self:flex-start" href="${esc(gcalLink(i))}" target="_blank" rel="noopener">Tambah ke Google Calendar</a>`:''}
     ${i.kind==='person'?'<div class="small muted">Tahun lahir tidak penting untuk peringatan; pilih mana-mana tahun jika tidak tahu.</div>':''}
@@ -1934,13 +1936,29 @@ function renderVoice(){
   m.innerHTML = `<div class="sheet wide" role="dialog" aria-modal="true" aria-label="Cakap dan susun">
     <div style="display:flex;justify-content:space-between;align-items:center"><h2>Cakap & susun</h2><button class="btn ghost sm" data-act="close">Tutup</button></div>
     <p class="small muted" style="margin:0">${SR ? 'Tekan <b>Rakam suara</b> dan cakap semua sekali, kemudian tekan Berhenti.' : 'Tekan ikon mikrofon pada papan kekunci telefon, kemudian cakap semua sekali.'} Claude akan ringkaskan dan asingkan jadi tugasan, peringatan, acara, belanja, perkara yang ditunggu, idea atau nota.</p>
-    ${SR ? `<div class="inline"><button class="btn ${rec ? 'danger arm' : 'pri'}" data-act="vz-mic">${rec ? 'Berhenti merakam' : 'Rakam suara'}</button>${rec ? '<span class="small muted">Sedang mendengar…</span>' : ''}</div>` : ''}
+    <div class="inline">${SR ? `<button class="btn ${rec ? 'danger arm' : 'pri'}" data-act="vz-mic">${rec ? 'Berhenti merakam' : 'Rakam suara'}</button>` : ''}
+      ${canImg ? `<label class="btn"><input type="file" id="pic-file2" accept="image/*" hidden>📷 ${V.img ? 'Tukar gambar' : 'Gambar / screenshot'}</label>` : ''}${rec ? '<span class="small muted">Sedang mendengar…</span>' : ''}</div>
+    ${V.imgUrl ? `<div class="vz-pic"><img src="${V.imgUrl}" alt="Gambar dilampirkan"><button type="button" class="btn ghost sm" data-act="vz-unpic">Buang gambar</button></div>` : ''}
     <textarea class="f" id="vz-text" rows="6" placeholder="cth: Esok pukul 10 pagi jumpa klien kafe di Bangsar, bawa sebut harga. Tadi isi minyak 60 ringgit. Tunggu Faiz hantar video review Jumaat ni. Ingatkan aku bayar bil air hari Sabtu.">${esc(V.text)}</textarea>
     <div class="inline"><button class="btn ${V.res?'':'pri'}" data-act="vz-run" ${V.busy?'disabled':''}>${V.busy ? 'Claude sedang menyusun…' : V.res ? 'Susun semula' : 'Susun dengan Claude'}</button>${V.res||V.text ? '<button class="btn ghost" data-act="vz-clear">Kosongkan</button>' : ''}</div>
     ${res}</div>`;
   m.hidden = false;
-  if(!V.res && !V.busy){ const t = m.querySelector('#vz-text'); if(t) t.focus(); }
+  if(!V.res && !V.busy && !V.img){ const t = m.querySelector('#vz-text'); if(t) t.focus(); }
 }
+async function openPic(file){
+  if(!file) return;
+  if(!sample){ toast('Bantuan Claude tidak tersedia dalam paparan ini.'); return; }
+  document.body.classList.remove('hy-cap');
+  const img = await shrinkImage(file);
+  const V = ui.voice; if(V.imgUrl) try { URL.revokeObjectURL(V.imgUrl); } catch(e){}
+  const tx = document.getElementById('vz-text'); if(tx) V.text = tx.value;
+  const cap = document.getElementById('cap-in');
+  const extra = !V.open && cap && cap.value.trim() ? cap.value.trim() : '';
+  if(extra) cap.value = '';
+  ui.voice = {...V, img, imgUrl: URL.createObjectURL(img), res:null, summary:'', text: V.open ? V.text : extra};
+  openVoice('', true);
+}
+function dropPic(){ const V = ui.voice; if(V.imgUrl) try { URL.revokeObjectURL(V.imgUrl); } catch(e){} V.img = null; V.imgUrl = ''; V.res = null; renderVoice(); }
 function openVoice(text, run){
   editing = null;
   if(text) ui.voice = {...ui.voice, text, res:null, summary:''};
@@ -1952,7 +1970,7 @@ async function vzRun(){
   const V = ui.voice, el = document.getElementById('vz-text');
   if(el) V.text = el.value;
   if(!sample){ toast('Bantuan Claude tidak tersedia dalam paparan ini.'); return; }
-  if(!V.text.trim()){ toast('Cakap atau tulis sesuatu dahulu.'); return; }
+  if(!V.text.trim() && !V.img){ toast('Cakap, tulis atau pilih gambar dahulu.'); return; }
   V.busy = true; V.res = null; V.summary = ''; renderVoice();
   try {
     const r = await sample.json(
@@ -1971,8 +1989,10 @@ Tugas:
 Tajuk ringkas dan jelas dalam bahasa pengguna. Jangan reka tarikh, masa, nama atau jumlah yang tidak disebut. Balas JSON sahaja:
 {"summary":"...","items":[{"kind":"task","title":"...","due":null,"priority":"biasa"}]}
 
+${V.img ? `Pengguna juga melampirkan SATU gambar: mungkin tangkapan skrin (WhatsApp, emel, kalendar, mesej klien), poster atau jemputan acara, resit atau invois, jadual, atau nota tulisan tangan. Baca SEMUA maklumat penting dalam gambar (tarikh, masa, tempat, nama, jumlah RM) dan jadikan item yang sesuai, digabungkan dengan teks pengguna jika ada. Resit atau bukti bayaran yang sudah dibayar = "expense" (note = nama kedai + apa dibeli). Invois atau bil yang belum dibayar = "task" (title "Bayar ..." dengan due). Jemputan atau poster = "event". Jika gambar hanya maklumat, simpan sebagai "note" dengan body ringkasan isi gambar.
+` : ''}
 Teks:
-${V.text.slice(0,15000)}`, {cache:false});
+${V.text.slice(0,15000) || (V.img ? '(tiada teks, rujuk gambar)' : '')}`, V.img ? {cache:false, images:[V.img]} : {cache:false});
     V.summary = String(r && r.summary || '');
     V.res = (r && Array.isArray(r.items) ? r.items : []).map(a => {
       if(a && a.kind==='note') return {kind:'note', title:String(a.title||'Nota').slice(0,80), body:String(a.body||a.title||''), pinned:false, updated:Date.now()};
@@ -1985,13 +2005,21 @@ ${V.text.slice(0,15000)}`, {cache:false});
 async function vzAdd(){
   const V = ui.voice; if(!V.res) return;
   const k = document.getElementById('vz-keep'); if(k) V.keep = k.checked;
-  let n = 0;
-  for(const a of V.res.filter(x => x.on)){ const {on, ...data} = a; if(await addItem(data)) n++; }
-  if(V.keep && V.text.trim()){
-    const d = new Date();
-    await addItem({kind:'note', title:`Catatan suara ${fmtD(today())}, ${fmtT(pad(d.getHours())+':'+pad(d.getMinutes()))}`, body:(V.summary ? V.summary + '\n\n---\n\n' : '') + V.text, pinned:false, updated:Date.now()});
+  let n = 0, imgId = '';
+  const chosen = V.res.filter(x => x.on);
+  if(V.img && assets && (V.keep || chosen.some(a => a.kind==='expense' || a.kind==='note'))){
+    try { const up = await assets.upload(V.img, {type: V.img.type==='image/png' ? 'image/png' : 'image/jpeg'}); imgId = up.id; } catch(e){}
   }
-  ui.voice = {text:'', busy:false, res:null, summary:'', keep:V.keep, open:false};
+  for(const a of chosen){ const {on, ...data} = a;
+    if(imgId && data.kind==='expense') data.receiptId = imgId;
+    if(imgId && data.kind==='note') data.imgId = imgId;
+    if(await addItem(data)) n++; }
+  if(V.keep && (V.text.trim() || imgId)){
+    const d = new Date();
+    await addItem({kind:'note', title:`${V.img ? 'Catatan gambar' : 'Catatan suara'} ${fmtD(today())}, ${fmtT(pad(d.getHours())+':'+pad(d.getMinutes()))}`, body:(V.summary ? V.summary + (V.text ? '\n\n---\n\n' : '') : '') + V.text, pinned:false, updated:Date.now(), ...(imgId ? {imgId} : {})});
+  }
+  if(V.imgUrl) try { URL.revokeObjectURL(V.imgUrl); } catch(e){}
+  ui.voice = {text:'', busy:false, res:null, summary:'', keep:V.keep, open:false, img:null, imgUrl:''};
   closeEditor();
   toast(n ? `${n} item ditambah ke sistem` : 'Catatan disimpan');
 }
@@ -2325,6 +2353,7 @@ document.addEventListener('click', async ev => {
   if(k==='hud-loc') hudLoc();
   if(k==='voice'){ openVoice('', false); if(SR && !rec) micToggle(); }
   if(k==='vz-mic') micToggle();
+  if(k==='vz-unpic') dropPic();
   if(k==='vz-run') vzRun();
   if(k==='vz-add') vzAdd();
   if(k==='vz-clear'){ ui.voice = {...ui.voice, text:'', res:null, summary:''}; renderVoice(); }
@@ -2356,6 +2385,7 @@ document.addEventListener('change', ev => {
   if(T.id==='ml-tone') ui.mail.tone = T.value;
   if(T.matches('[data-goal]')) updItem(T.dataset.goal, {progress:Number(T.value)});
   if(T.id==='ex-file' && T.files && T.files[0]) scanReceipt(T.files[0]);
+  if((T.id==='pic-file' || T.id==='pic-file2') && T.files && T.files[0]){ const f = T.files[0]; T.value = ''; openPic(f); }
 });
 document.addEventListener('submit', async ev => {
   ev.preventDefault();
@@ -2438,6 +2468,7 @@ function setCapture(){
     const o = sel.querySelector('option[value="auto"]'); if(o) o.remove();
     if(sel.value==='auto' || !sel.value) sel.value = 'task';
     const vb = $('#cap-voice'); if(vb) vb.hidden = true;
+    const pb = $('#cap-pic'); if(pb) pb.hidden = true;
     hint.textContent = 'Pilih jenis di sebelah kanan sebelum tambah.';
   }
   render();
