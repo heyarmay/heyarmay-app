@@ -732,7 +732,7 @@ function hudHtml(agendaN, tkN){
 function hudSpeak(){
   if(!('speechSynthesis' in window)){ toast('Pelayar ini tak boleh bercakap.'); return; }
   speechSynthesis.cancel();
-  const el = document.querySelector('.hud-line p');
+  const el = document.querySelector('.dx-brief p') || document.querySelector('.hud-line p');
   const ns = nextSolat();
   const txt = ui.summary ? ui.summary : ((el ? el.textContent : '') + (ns ? ` Waktu ${ns.l} dalam ${durTxt(ns.mins)}.` : ''));
   const u = new SpeechSynthesisUtterance(txt.replace(/[·•]/g, ',').replace(/(\d+)j (\d+)m/g, '$1 jam $2 minit'));
@@ -754,13 +754,96 @@ setInterval(() => {
   const r = document.getElementById('hud-day'); if(r){ const C = 2*Math.PI*76; r.setAttribute('stroke-dasharray', `${(C*(d.getHours()*60+d.getMinutes())/1440).toFixed(1)} ${C.toFixed(1)}`); }
 }, 15000);
 
+/* ---------- Hari Ini v3 (susun atur ala konsep "Personal Assistant") ---------- */
+const DXI = (() => {
+  const s = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+  const m = {
+    check:'<circle cx="12" cy="12" r="9"/><path d="M8.5 12.2l2.4 2.4 4.6-5"/>',
+    file:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
+    users:'<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0"/><path d="M15.5 5.2a3 3 0 0 1 0 5.6M17.5 14.2a5.4 5.4 0 0 1 3 5.3"/>',
+    target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/>',
+    cal:'<rect x="3.5" y="4.5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 2.8v3.4M16 2.8v3.4"/>',
+    chart:'<path d="M5 20V12M10 20V6M15 20v-9M20 20V9"/>',
+    coins:'<ellipse cx="12" cy="6" rx="7" ry="2.8"/><path d="M5 6v6c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8V6"/><path d="M5 12v6c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8v-6"/>',
+    wallet:'<rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18M16 14.5h2"/><path d="M6 6l9-3 1.5 3"/>',
+    alert:'<path d="M12 3.5L2.8 19.5h18.4z"/><path d="M12 10v4.2M12 17.2v.1"/>',
+    checksq:'<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M8 12.2l2.6 2.6L16 9.4"/>',
+    pin:'<path d="M14.5 3.5l6 6-3 1.2-3.7 3.7-.6 4.1-9.2-9.2 4.1-.6 3.7-3.7z"/><path d="M8.6 15.4L3.5 20.5"/>',
+    plus:'<path d="M12 5v14M5 12h14"/>',
+    mosque:'<path d="M5 21v-8.5C5 9 8.2 6.5 12 5c3.8 1.5 7 4 7 7.5V21"/><path d="M12 2.5V5M3 21h18M10 21v-3.5a2 2 0 0 1 4 0V21"/>',
+    chev:'<path d="M9 6l6 6-6 6"/>',
+    spark:'<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
+    speak:'<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',
+    radar:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3"/><circle cx="12" cy="12" r="2.5"/>',
+    gift:'<rect x="3.5" y="9" width="17" height="11.5" rx="1.5"/><path d="M3.5 13h17M12 9v11.5M12 9c-1.5-3.5-5.5-4-5.5-1.5S10 9 12 9zM12 9c1.5-3.5 5.5-4 5.5-1.5S14 9 12 9z"/>',
+    bell:'<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>'
+  };
+  return k => `<svg class="dxi" ${s}>${m[k]||''}</svg>`;
+})();
+const dxCorners = '<i class="dx-c tl"></i><i class="dx-c tr"></i><i class="dx-c bl"></i><i class="dx-c br"></i>';
+const dxHead = (icon, title, link) => `<div class="dx-ch"><span class="dx-ic">${DXI(icon)}</span><h3>${title}</h3>${link||''}</div>`;
+const dxMore = (v, label) => `<a class="dx-more" href="#${v}" data-view="${v}">${label}${DXI('chev')}</a>`;
+function dxDueChip(i, t){
+  if(i.due && i.due < t){ const n = daysBetween(i.due, t); return `<span class="chip late">Lewat ${n} hari</span>`; }
+  if(i.due === t) return '<span class="chip rem">Hari ini</span>';
+  if(i.due === addDays(t,1)) return '<span class="chip rem">Esok</span>';
+  if(i.due) return `<span class="chip">${esc(fmtD(i.due))}</span>`;
+  return i.priority==='tinggi' ? '<span class="chip late">Penting</span>' : '';
+}
+const dxTask = (i, t) => `<div class="dx-row" data-open="${i.id}"><button class="chk dx-chk ${i.done?'on':''}" data-toggle="${i.id}" aria-label="Tandakan selesai"></button>
+  <div class="dx-rt"><span class="t">${esc(i.title)}</span><span class="dx-meta">${dxDueChip(i, t)}${exChip(i)}</span></div></div>`;
+
+function dxHud(){
+  const S = hudStats(), d = new Date();
+  const C = 2 * Math.PI, ring = (r, f) => `stroke-dasharray="${(C*r*f).toFixed(1)} ${(C*r).toFixed(1)}"`;
+  const cur = wx && wx.current, dy = wx && wx.daily, night = cur ? !cur.is_day : (d.getHours() < 7 || d.getHours() >= 19);
+  const [wDesc, wKind] = cur ? WMO(cur.weather_code) : ['Memuatkan cuaca…', 'cloud'];
+  let hours = '';
+  if(wx && wx.hourly && wx.hourly.time){
+    const key = ymd(d) + 'T' + pad(d.getHours()) + ':00';
+    const i0 = Math.max(0, wx.hourly.time.indexOf(key));
+    for(let i = i0; i < Math.min(i0 + 8, wx.hourly.time.length); i++){
+      const tm = wx.hourly.time[i], h = Number(tm.slice(11,13)), pr = (wx.hourly.precipitation_probability||[])[i] || 0;
+      hours += `<div class="hh ${i===i0?'now':''}"><span>${i===i0?'Kini':pad(h)+':00'}</span>${wxIcon(WMO(wx.hourly.weather_code[i])[1], h<7||h>=19)}<b>${Math.round(wx.hourly.temperature_2m[i])}°</b><em class="${pr>=50?'wet':''}">${pr}%</em></div>`;
+    }
+  }
+  const ns = nextSolat(), hm = pad(d.getHours())+':'+pad(d.getMinutes());
+  const sol = solat && solat.times ? SOLAT.map(([k, l]) => `<div class="ps ${ns && ns.k===k ? 'next' : ''} ${solat.times[k] && !(ns && ns.k===k) && solat.times[k] < hm ? 'past' : ''}"><span>${l}</span><b>${esc(fmtT(solat.times[k]))}</b></div>`).join('') : '';
+  const kv = dy && dy.temperature_2m_max ? `${Math.round(dy.temperature_2m_max[0])}° / ${Math.round(dy.temperature_2m_min[0])}° · Hujan ${dy.precipitation_probability_max[0]}%` : '';
+  const open = !!ui.hudMore;
+  const pill = ns ? `<b>${esc(ns.l)} ${esc(fmtT(ns.at))}</b><span>dalam ${durTxt(ns.mins)}</span>`
+    : solat && solat.times ? `<b>Subuh ${esc(fmtT(solat.times.subuh))}</b><span>esok</span>` : '<b>Waktu solat</b><span>memuatkan…</span>';
+  return `<section class="dx-card dx-hud" aria-label="Jam, cuaca dan waktu solat">${dxCorners}
+    <div class="dx-hud-top">
+      <div class="dx-ring" title="Cincin luar: ${Math.round(S.day*100)}% hari berlalu · Cincin dalam: ${S.done}/${S.total} tugasan selesai">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <circle class="r0" cx="100" cy="100" r="95"/>
+          <circle class="r2 trk" cx="100" cy="100" r="84"/><circle class="r2" id="hud-day" cx="100" cy="100" r="84" ${ring(84, S.day)} transform="rotate(-90 100 100)"/>
+          <circle class="r1" cx="100" cy="100" r="74"/>
+          <circle class="r3 trk" cx="100" cy="100" r="66"/><circle class="r3" cx="100" cy="100" r="66" ${ring(66, S.task)} transform="rotate(-90 100 100)"/>
+        </svg>
+        <b id="hud-clock">${pad(d.getHours())}:${pad(d.getMinutes())}</b>
+      </div>
+      <div class="dx-wx">
+        <div class="dx-loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg><span>${esc((wx && wx.label) || myLoc().label)}</span><button type="button" class="hud-loc" data-act="hud-loc" title="Guna lokasi saya" aria-label="Guna lokasi saya"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button></div>
+        <div class="dx-temp">${wxIcon(wKind, night)}<b>${cur ? Math.round(cur.temperature_2m) + '°' : '—'}</b></div>
+        <div class="dx-desc">${esc(wDesc)}</div>
+        ${kv ? `<div class="dx-kv">${kv}</div>` : ''}
+      </div>
+    </div>
+    <button type="button" class="dx-pill" data-act="hud-more" aria-expanded="${open}">${DXI('mosque')}<span class="dx-pt">${pill}</span><em>${open ? 'Sorok' : 'Ramalan & solat'}</em>${DXI('chev')}</button>
+    ${open ? `<div class="dx-extra">${hours ? `<div class="hud-hours">${hours}</div>` : ''}${sol ? `<div class="hud-solat" aria-label="Waktu solat ${esc(solat.src||'')}">${sol}</div>` : ''}</div>` : ''}
+  </section>`;
+}
+
 function vToday(){
-  const t = today(), now = Date.now();
+  const t = today(), d = new Date(), nowHM = pad(d.getHours())+':'+pad(d.getMinutes());
   const ev = byKind('event').filter(i => i.date===t);
   const rm = byKind('reminder').filter(i => !i.done && (i.at||'').slice(0,10)===t);
-  const agenda = [...ev.map(i => ({k:'e', s:i.start||'00:00', i})), ...rm.map(i => ({k:'r', s:(i.at||'').slice(11,16), i}))].sort((a,b)=>a.s.localeCompare(b.s));
+  const shoots = team.connected ? teamShoots(t) : [];
   const missed = byKind('reminder').filter(i => !i.done && (i.at||'').slice(0,10) < t && !isNaN(atMs(i.at)));
   const tk = byKind('task').filter(i => !i.done && ((i.due && i.due<=t) || i.priority==='tinggi')).sort(byDue);
+  const upT = byKind('task').filter(i => !i.done && i.due && i.due > t && i.due <= addDays(t,7) && i.priority!=='tinggi').sort(byDue);
   const chase = byKind('waiting').filter(waitChase);
   const callP = byKind('person').filter(contactDue);
   const owed = byKind('payment').filter(i => !i.paid);
@@ -773,53 +856,105 @@ function vToday(){
   const pn = byKind('note').filter(i => i.pinned).sort((a,b)=>(b.updated||0)-(a.updated||0));
   const exN = [...items, ...exps].filter(i => i.example).length;
 
-  const agendaHtml = agenda.length ? agenda.map(a => a.k==='e' ? rowEv(a.i) :
-    `<div class="row" data-open="${a.i.id}"><span class="kbar rem"></span><span class="time">${esc(fmtT(a.s))}</span>
-      <div class="rt"><span class="t">${esc(a.i.title)}</span><span class="meta"><span class="chip rem">peringatan</span><span>${rel(atMs(a.i.at))}</span>${exChip(a.i)}</span></div>
-      <button class="chk sun" data-toggle="${a.i.id}" aria-label="Tandakan selesai"></button></div>`).join('')
-    : empty('Tiada acara atau peringatan hari ini.');
+  /* Seterusnya: perkara terdekat hari ini (acara, peringatan, job team) */
+  const agenda = [
+    ...ev.map(i => ({s:i.start||'', title:i.title, sub:i.place||'Acara', open:i.id})),
+    ...rm.map(i => ({s:(i.at||'').slice(11,16), title:i.title, sub:'Peringatan', open:i.id})),
+    ...shoots.map(g => ({s:g.time||'', title:g.title||'Job', sub:'Team ARMEDIA' + (g.location ? ' · ' + g.location : ''), href:`${ARM_URL}#/schedule?d=${g.date}`}))
+  ].sort((a,b)=>(a.s||'99').localeCompare(b.s||'99'));
+  const upcoming = agenda.filter(a => !a.s || a.s >= nowHM);
+  let nx = upcoming[0], nxDay = '';
+  if(!nx && soon[0]){ const i = soon[0]; nx = {s:i.start||'', title:i.title, sub:i.place||'Acara', open:i.id}; nxDay = fmtD(i.date); }
+  const nxTag = nx && nx.href ? 'a' : 'div', nxAttr = nx ? (nx.href ? `href="${esc(nx.href)}" target="_blank" rel="noopener"` : `data-open="${nx.open}" role="button" tabindex="0"`) : '';
+  const nextHtml = nx ? `<${nxTag} class="dx-card dx-next" ${nxAttr}>
+      ${dxHead('cal', 'Seterusnya')}
+      <div class="dx-next-b"><span class="dx-bar"></span><div><b class="dx-big">${nx.s ? esc(nx.s) : 'Sepanjang hari'}</b>${nxDay ? `<span class="dx-day">${esc(nxDay)}</span>` : ''}
+        <div class="dx-nt">${esc(nx.title)}</div><div class="dx-ns">${esc(nx.sub)}</div></div>${DXI('chev')}</div>
+      ${upcoming.length > 1 ? `<div class="dx-foot">${upcoming.length - 1} lagi hari ini</div>` : ''}
+    </${nxTag}>` : `<div class="dx-card dx-next">${dxHead('cal', 'Seterusnya', dxMore('kalendar', 'Kalendar'))}<div class="dx-empty">Tiada apa-apa dalam jadual hari ini.</div></div>`;
 
-  const sumBox = ui.summaryBusy ? `<div class="summary idle">Claude sedang menyusun hari anda…</div>`
-    : ui.summary ? `<div class="summary">${esc(ui.summary)}</div>`
-    : `<div class="summary idle">Tekan <b>Ringkaskan hari saya</b> dan Claude akan beritahu apa yang patut didahulukan berdasarkan jadual, kerja yang tertunggak, orang yang perlu dikejar dan tarikh penting.</div>`;
+  /* Ringkasan pendek */
+  const bits = [];
+  if(agenda.length) bits.push(`${agenda.length} perkara dalam jadual`);
+  if(shoots.length) bits.push(`${shoots.length} job team`);
+  if(wx && wx.hourly && wx.hourly.time){
+    const i0 = Math.max(0, wx.hourly.time.findIndex(x => x >= ymd(d) + 'T' + pad(d.getHours()) + ':00'));
+    const pr = (wx.hourly.precipitation_probability || []).slice(i0, i0 + 6), mx = Math.max(0, ...pr);
+    if(mx >= 40){ const at = wx.hourly.time[i0 + pr.indexOf(mx)].slice(11, 16); bits.push(`hujan ${mx}% sekitar ${fmtT(at)}`); }
+  }
+  const lead = tk.length ? `<b>${tk.length} tugasan</b> perlukan perhatian.` : '<b>Tiada tugasan mendesak.</b>';
+  const brief = `<div class="dx-brief"><span class="dx-ic ring">${DXI('radar')}</span><p>${lead}${bits.length ? ` <span>${esc(bits.join(' · '))}.</span>` : ''}</p>
+    <div class="dx-acts"><button type="button" class="ib" data-act="hud-speak" aria-label="Dengar taklimat" title="Dengar taklimat">${DXI('speak')}</button>${sample ? `<button type="button" class="ib" data-act="summary" ${ui.summaryBusy?'disabled':''} aria-label="Taklimat penuh daripada Claude" title="Taklimat penuh">${DXI('spark')}</button>` : ''}</div></div>`;
 
-  const chaseHtml = [...chase.map(rowWait), ...callP.slice(0,5).map(rowPerson)].join('');
-  const datesHtml = [...ren.map(rowRenew),
-    ...pd.map(x => `<div class="row" data-open="${x.p.id}"><div class="rt"><span class="t">${esc(x.what)} ${esc(x.p.name)}</span><span class="meta"><span class="chip plum">${relDays(x.in)}</span><span>${esc(fmtD(x.date))}</span>${x.years>0&&x.years<120&&x.what==='Hari lahir'?`<span>${x.years} tahun</span>`:''}${exChip(x.p)}</span></div><button class="btn sm" data-write="${x.p.id}">Tulis ucapan</button></div>`),
-    ...gifts.map(rowGift)].join('');
-  const owedSum = owed.reduce((s,i)=>s+Number(i.amount||0),0);
-  const spM = monthExps(ym()), spMonth = spM.reduce(sumAmt,0), spToday = spM.filter(e => e.date===t).reduce(sumAmt,0), bud = budgetDoc();
-  const spPers = spM.filter(e => scopeOf(e)==='peribadi').reduce(sumAmt,0);
-  const spendRow = `<div class="row" data-view="belanja"><div class="rt"><span class="t">Belanja bulan ini</span><span class="meta"><span>hari ini ${money(spToday)}</span>${bud.total?`<span class="chip ${spPers>bud.total?'late':spPers>=bud.total*.85?'rem':''}">${Math.round(spPers/bud.total*100)}% bajet</span>`:''}</span></div><span class="amt">${money(spMonth)}</span></div>`;
-  const moneyHtml = spendRow + (owed.length?`<div class="row" data-view="bayaran"><div class="rt"><span class="t">Belum dibayar klien</span><span class="meta"><span>${owed.length} invois</span>${owed.some(i=>i.due&&i.due<t)?'<span class="chip late">ada yang lewat</span>':''}</span></div><span class="amt">${money(owedSum)}</span></div>`:'') + bills.map(rowBill).join('');
-
-  const quick = [
-    ['tugasan', tk.length, 'Tugasan', tk.some(i => i.due && i.due < t)],
-    ['menunggu', chase.length, 'Kejar', false],
-    ['peringatan', missed.length, 'Terlepas', true],
-    ['bayaran', owed.length, 'Belum bayar', owed.some(i => i.due && i.due < t)],
-    ...(team.connected ? [['team', teamShoots(t).length, 'Job team', false]] : [])
+  /* 3 jubin */
+  const tiles = [
+    ['tugasan', 'check', tk.length, 'Tugasan', tk.some(i => i.due && i.due < t)],
+    ['bayaran', 'file', owed.length, 'Invois', owed.some(i => i.due && i.due < t)],
+    team.connected ? ['team', 'users', shoots.length, 'Job team', false] : ['menunggu', 'users', chase.length, 'Kejar', false]
   ];
-  const quickHtml = `<div class="hy-quick">${quick.map(([v, n, l, hot]) => `<a class="hy-q ${n?'':'zero'} ${n&&hot?'hot':''}" href="#${v}" data-view="${v}"><b>${n}</b><span>${l}</span></a>`).join('')}</div>`;
-  const P = (cond, title, body, extra) => cond ? panel(title, body, extra) : '';
-  return `<div class="stack">
-    <h1 class="sr-only">${greet()}</h1>
-    ${hudHtml(agenda.length, tk.length)}
-    ${quickHtml}
-    ${exN?`<div class="banner"><span>Ada ${exN} item contoh.</span><button class="btn sm" data-act="clear-ex">Padam semua contoh</button></div>`:''}
-    ${sample && (ui.summary || ui.summaryBusy) ? sumBox : ''}
-    <div class="grid">
-      ${panel('Jadual hari ini', agendaHtml, goto('kalendar','Kalendar'))}
-      ${P(tk.length, 'Perlu dibuat', tk.slice(0,6).map(rowTask).join(''), goto('tugasan','Semua'))}
-      ${P(team.connected, 'Team ARMEDIA hari ini', team.connected ? teamTodayHtml() : '', goto('team','Jadual team'))}
-      ${P(chaseHtml, 'Perlu dikejar', chaseHtml, goto('menunggu','Semua'))}
-      ${P(missed.length, 'Peringatan terlepas', missed.sort(byAt).map(rowRem).join(''))}
-      ${P(habits.length, 'Tabiat hari ini', `<div class="hchips">${habits.map(h=>`<button class="hchip ${h.log&&h.log[t]?'on':''}" data-habit="${h.id}">${esc(h.title)}</button>`).join('')}</div>`, goto('matlamat','Semua'))}
-      ${panel('Wang', moneyHtml, goto('belanja','Belanja'))}
-      ${P(datesHtml, 'Tarikh penting', datesHtml, goto('tarikh','Semua'))}
-      ${P(soon.length, '7 hari akan datang', soon.slice(0,6).map(i=>rowEv(i,true)).join(''))}
-      ${P(pn.length, 'Nota disemat', pn.slice(0,5).map(n=>`<div class="row" data-open="${n.id}"><div class="rt"><span class="t">${esc(n.title||'Tanpa tajuk')}</span><span class="meta"><span>${esc((n.body||'').slice(0,80))}</span>${exChip(n)}</span></div></div>`).join(''), goto('nota','Nota'))}
-    </div></div>`;
+  const tilesHtml = `<div class="dx-tiles">${tiles.map(([v, ic, n, l, hot], ix) => `<a class="dx-tile ${ix===0?'pri':''} ${n?'':'zero'} ${n&&hot?'hot':''}" href="#${v}" data-view="${v}">${DXI(ic)}<b>${n}</b><span>${l}</span></a>`).join('')}</div>`;
+
+  const sumBox = ui.summaryBusy ? `<div class="summary idle">Claude sedang menyusun hari anda…</div>` : ui.summary ? `<div class="summary">${esc(ui.summary)}</div>` : '';
+
+  const focus = `<div class="dx-card">${dxHead('target', 'Fokus hari ini', tk.length > 4 ? dxMore('tugasan', `+${tk.length - 4} lagi`) : '')}
+    ${tk.length ? `<div class="dx-list">${tk.slice(0,4).map(i => dxTask(i, t)).join('')}</div>` : '<div class="dx-empty">Tiada tugasan mendesak hari ini.</div>'}</div>`;
+
+  const attn = [...missed.sort(byAt).map(rowRem), ...chase.map(rowWait), ...callP.slice(0,3).map(rowPerson)];
+  const attnHtml = attn.length ? `<div class="dx-card">${dxHead('bell', 'Perlu perhatian')}<div class="list">${attn.join('')}</div></div>` : '';
+  const habitHtml = habits.length ? `<div class="dx-card">${dxHead('checksq', 'Tabiat hari ini', dxMore('matlamat', 'Semua'))}<div class="hchips">${habits.map(h=>`<button class="hchip ${h.log&&h.log[t]?'on':''}" data-habit="${h.id}">${esc(h.title)}</button>`).join('')}</div></div>` : '';
+
+  /* Wang */
+  const owedSum = owed.reduce((s,i)=>s+Number(i.amount||0),0), late = owed.filter(i => i.due && i.due < t).length;
+  const spM = monthExps(ym()), spMonth = spM.reduce(sumAmt,0), bud = budgetDoc();
+  const spPers = spM.filter(e => scopeOf(e)==='peribadi').reduce(sumAmt,0);
+  const moneyHtml = `<div class="dx-card dx-money">${dxHead('coins', 'Wang')}
+    <a class="dx-amt" href="#bayaran" data-view="bayaran"><b class="dx-big">${money(owedSum)}</b><span>${owed.length ? 'Belum dibayar klien' : 'Tiada bayaran klien tertunggak'}</span>
+      ${owed.length ? `<span class="dx-flag ${late?'late':''}">${late ? DXI('alert') : ''}${owed.length} invois${late ? ` · ${late} lewat` : ' · Perlu susulan'}</span>` : ''}</a>
+    <a class="dx-line" href="#belanja" data-view="belanja">${DXI('wallet')}<span>Belanja bulan ini${bud.total ? ` <em class="${spPers>bud.total?'over':''}">${Math.round(spPers/bud.total*100)}% bajet</em>` : ''}</span><b>${money(spMonth)}</b>${DXI('chev')}</a>
+    ${bills.map(b => `<a class="dx-line" href="#bil" data-view="bil">${DXI('file')}<span>Bil ${esc(b.title)} <em>${esc(fmtD(billDueDay(b)))}</em></span><b>${money(b.amount)}</b>${DXI('chev')}</a>`).join('')}
+  </div>`;
+
+  /* Tarikh penting */
+  const renRow = i => { const n = daysBetween(t, i.date);
+    return `<div class="dx-row" data-open="${i.id}"><span class="dx-warn ${n<0?'late':n<=7?'rem':''}">${DXI('alert')}</span>
+      <div class="dx-rt"><span class="t">${esc(i.title)}</span><span class="dx-meta"><span class="chip ${n<0?'late':n<=7?'rem':''}">${n<0?'Telah tamat':n===0?'Tamat hari ini':`${n} hari lagi`}</span>${exChip(i)}</span></div>
+      <button class="btn sm dx-btn" data-renew="${i.id}">Dah baharui</button></div>`; };
+  const dates = [...ren.map(renRow),
+    ...pd.map(x => `<div class="dx-row" data-open="${x.p.id}"><span class="dx-warn plum">${DXI('gift')}</span><div class="dx-rt"><span class="t">${esc(x.what)} ${esc(x.p.name)}</span><span class="dx-meta"><span class="chip plum">${relDays(x.in)}</span></span></div><button class="btn sm dx-btn" data-write="${x.p.id}">Tulis ucapan</button></div>`),
+    ...gifts.map(rowGift)];
+  const datesHtml = dates.length ? `<div class="dx-card">${dxHead('cal', 'Tarikh penting', dxMore('tarikh', 'Semua'))}<div class="dx-list">${dates.slice(0,5).join('')}</div></div>` : '';
+
+  const upHtml = upT.length ? `<div class="dx-card">${dxHead('checksq', 'Tugasan akan datang', dxMore('tugasan', 'Semua'))}<div class="dx-list">${upT.slice(0,4).map(i => dxTask(i, t)).join('')}</div></div>` : '';
+  const pinHtml = pn.length ? `<div class="dx-card">${dxHead('pin', 'Nota disemat', dxMore('nota', 'Nota'))}<div class="dx-list">${pn.slice(0,4).map(n => `<div class="dx-row link" data-open="${n.id}"><div class="dx-rt"><span class="t">${esc(n.title||'Tanpa tajuk')}</span>${n.body?`<span class="dx-sub">${esc(String(n.body).slice(0,70))}</span>`:''}</div>${DXI('chev')}</div>`).join('')}</div></div>` : '';
+
+  const voiceHtml = `<div class="dx-card dx-voice">${dxCorners}
+    <button type="button" class="dx-wave" data-act="voice" aria-label="Cakap dan susun">${Array.from({length:23}, (_, i) => `<i style="--h:${[.3,.5,.35,.7,.45,.9,.55,1,.6,.8,.4,1,.5,.75,.95,.45,.7,.35,.85,.5,.6,.3,.45][i]};--d:${(i*0.07).toFixed(2)}s"></i>`).join('')}</button>
+    <p>Ada apa nak diingatkan?</p>
+    <div class="dx-vb"><button type="button" class="btn" data-act="cap-as" data-kind="task">${DXI('plus')}Tambah tugasan</button><button type="button" class="btn" data-act="cap-as" data-kind="expense">${DXI('wallet')}Catat belanja</button></div>
+  </div>`;
+
+  return `<div class="dx">
+    <div class="dx-col">
+      <header class="dx-hello"><h1>${greet()}, Amir</h1><p>${HARI[d.getDay()]}, ${d.getDate()} ${BLN[d.getMonth()]}</p></header>
+      ${dxHud()}
+      ${brief}
+      ${tilesHtml}
+      ${exN?`<div class="banner"><span>Ada ${exN} item contoh.</span><button class="btn sm" data-act="clear-ex">Padam semua contoh</button></div>`:''}
+      ${sample ? sumBox : ''}
+      ${focus}
+      ${nextHtml}
+      ${attnHtml}
+      ${habitHtml}
+    </div>
+    <div class="dx-col">
+      <h2 class="dx-h2">${DXI('chart')}Ringkasan peribadi</h2>
+      ${moneyHtml}
+      ${datesHtml}
+      ${upHtml}
+      ${pinHtml}
+      ${voiceHtml}
+    </div>
+  </div>`;
 }
 
 /* ---------- belanja ---------- */
@@ -2487,6 +2622,10 @@ document.addEventListener('click', async ev => {
     for(const id of ex) await delItem(id);
     toast('Item contoh dipadam');
   }
+  if(k==='cap-as'){ const sel = $('#cap-kind'), inp = $('#cap-in'); if(sel) sel.value = act.dataset.kind;
+    if(inp){ inp.placeholder = act.dataset.kind==='expense' ? 'cth: 12.50 nasi lemak' : 'cth: hantar invois klien esok'; }
+    if(matchMedia('(max-width: 820px)').matches) document.body.classList.add('hy-cap'); else window.scrollTo({top:0, behavior:'smooth'});
+    setTimeout(() => inp && inp.focus(), 120); return; }
   if(k==='new-note'){ const data = {kind:'note', title:'', body:'', pinned:false, updated:Date.now()}; const id = await addItem(data); if(id) openEditor({id, ...data}, true); }
   if(k==='msg-draft') draftMsg();
   if(k==='msg-copy') copyText(ui.msgText);
@@ -2511,7 +2650,7 @@ document.addEventListener('click', async ev => {
   }
   if(k==='exp-unattach'){ ui.exp.pending = null; render(); }
   if(k==='hud-speak') hudSpeak();
-  if(k==='hud-more'){ const wide = matchMedia('(min-width: 821px)').matches; ui.hudMore = !(ui.hudMore != null ? ui.hudMore : wide); render(); return; }
+  if(k==='hud-more'){ ui.hudMore = !ui.hudMore; render(); return; }
   if(k==='hud-loc') hudLoc();
   if(k==='voice'){ openVoice('', false); if(SR && !rec) micToggle(); }
   if(k==='vz-mic') micToggle();
