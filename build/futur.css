@@ -251,6 +251,10 @@ select option{background:var(--solid);color:var(--ink)}
 .hy-tabbar{display:none}
 @media (max-width:820px){
   .hy-burger{display:none!important}
+  #modal{align-items:flex-end;padding:0!important}
+  #modal .sheet{width:100%;max-width:none;border-radius:22px 22px 0 0;border-bottom:0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));
+    max-height:92vh;overflow-y:auto;animation:hy-up .32s var(--ease) both}
+  #modal .sheet::before{content:"";display:block;width:40px;height:4px;border-radius:4px;background:var(--line);margin:-6px auto 4px}
   .hy-quick{grid-template-columns:repeat(3,1fr);gap:8px}
   .hy-q{padding:10px 12px;border-radius:14px}
   .hy-q b{font-size:1.35rem}
@@ -295,6 +299,25 @@ select option{background:var(--solid);color:var(--ink)}
 .vz-pics figcaption{position:absolute;left:4px;bottom:4px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:rgba(0,0,0,.6);color:#fff;font:600 .7rem/20px var(--f-body);text-align:center}
 .vz-pics figure button{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:15px;line-height:1;cursor:pointer;padding:0}
 label.btn{cursor:pointer}
+
+/* Butiran item (sebelum ubah) */
+.dt-top{display:flex;align-items:center;gap:8px}
+.dt-top h2{flex:1;font-size:1.1rem}
+.dt-x{margin-left:auto;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--btn);color:var(--muted);font-size:20px;line-height:1;cursor:pointer;padding:0;flex:0 0 auto}
+.dt-x:hover{color:var(--ink)}
+.dt-title{font-size:1.45rem;font-weight:650;letter-spacing:-.02em;line-height:1.25;margin:2px 0 0;overflow-wrap:anywhere}
+.dt-title.is-done{text-decoration:line-through;color:var(--muted)}
+.dt-list{display:grid;grid-template-columns:1fr;gap:0;margin:0;border-top:1px solid var(--line)}
+.dt-list div{display:grid;grid-template-columns:minmax(96px,34%) minmax(0,1fr);gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
+.dt-list dt{color:var(--muted);font-size:.85rem}
+.dt-list dd{margin:0;font-weight:500;overflow-wrap:anywhere}
+.dt-list dd a{color:var(--accent);font-weight:600;text-decoration:none}
+.dt-body{white-space:pre-wrap;font-weight:400;line-height:1.55;display:block}
+.dt-pics{display:flex;flex-direction:column;gap:8px}
+.dt-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.dt-acts .btn{min-height:46px;flex:1 1 auto}
+.dt-acts .btn.pri{flex:1 1 100%}
+.hy-detail{gap:14px}
 
 /* ---------- HUD "Jarvis" ---------- */
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}

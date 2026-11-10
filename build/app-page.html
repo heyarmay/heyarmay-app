@@ -1875,24 +1875,56 @@ function gcalLink(i){
   } else dates = `${d}/${addDays(i.date,1).replace(/-/g,'')}`;
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(i.title||'')}&dates=${dates}&ctz=Asia/Kuala_Lumpur&location=${encodeURIComponent(i.place||'')}&details=${encodeURIComponent(i.notes||'')}`;
 }
-function openEditor(i){
+const KCHIP = {task:'task', reminder:'rem', event:'ev', waiting:'ev', renewal:'late', idea:'plum', payment:'rem', bill:'rem', expense:'', note:'', gift:'plum', person:'plum'};
+function fmtField([k, l, type, , opts], v){
+  if(v === null || v === undefined || v === '' || v === false) return '';
+  if(type==='date') return isYmd(v) ? esc(fmtD(v)) : esc(v);
+  if(type==='dt') return esc(fmtD(String(v).slice(0,10)) + ', ' + fmtT(String(v).slice(11,16)));
+  if(type==='time') return esc(fmtT(v));
+  if(type==='sel'){ const o = (opts||[]).find(x => x[0]===String(v)); return o && o[0] ? esc(o[1]) : ''; }
+  if(type==='num') return /RM/.test(l) ? esc(money(v)) : esc(String(v));
+  if(type==='check') return 'Ya';
+  if(type==='tel') return `<a href="tel:${esc(String(v).replace(/[^\d+]/g,''))}">${esc(v)}</a>`;
+  if(type==='url') return /^https?:\/\//i.test(v) ? `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v.replace(/^https?:\/\//,''))}</a>` : esc(v);
+  if(type==='area') return `<span class="dt-body">${esc(v)}</span>`;
+  return esc(v);
+}
+function openEditor(i, edit){
   if(!i || !S[i.kind]) return;
   editing = {...i};
   const [label, fields] = S[i.kind];
   const tgl = {task:i.done?'Belum selesai':'Tandakan selesai', reminder:i.done?'Belum selesai':'Tandakan selesai', waiting:i.done?'Belum diterima':'Sudah diterima', payment:i.paid?'Belum dibayar':'Sudah dibayar', gift:i.done?'Belum selesai':'Tandakan selesai'}[i.kind];
+  const pics = [i.imgId, ...(Array.isArray(i.imgIds) ? i.imgIds : [])].filter(Boolean).map((id, n) => `<img class="ed-img" src="/_blob/${esc(id)}" alt="Gambar asal ${n+1}" loading="lazy">`).join('');
+  const extras = `${i.kind==='event'&&i.date?`<a class="btn sm" href="${esc(gcalLink(i))}" target="_blank" rel="noopener">Tambah ke Google Calendar</a>`:''}${i.kind==='expense'?'<button class="btn sm" data-act="voucher">Lihat rekod formal</button>':''}`;
   const m = $('#modal');
+  if(!edit){
+    const title = nameOf(i);
+    const rows = fields.filter(f => !(f[2]==='text' && String(i[f[0]]??'') === title)).map(f => [f[1], fmtField(f, i[f[0]])]).filter(r => r[1]);
+    const done = i.done || i.paid;
+    m.innerHTML = `<div class="sheet hy-detail" role="dialog" aria-modal="true" aria-label="${label}: ${esc(title)}">
+      <div class="dt-top"><span class="chip ${KCHIP[i.kind]||''}">${label}</span>${done?'<span class="chip task">✓ selesai</span>':''}<button type="button" class="dt-x" data-act="close" aria-label="Tutup">×</button></div>
+      <h2 class="dt-title ${done?'is-done':''}">${esc(title || 'Tanpa tajuk')}</h2>
+      ${rows.length ? `<dl class="dt-list">${rows.map(([l, v]) => `<div><dt>${esc(l)}</dt><dd>${v}</dd></div>`).join('')}</dl>` : ''}
+      ${pics ? `<div class="dt-pics">${pics}</div>` : ''}
+      ${extras ? `<div class="inline">${extras}</div>` : ''}
+      <div class="dt-acts">${tgl?`<button type="button" class="btn pri" data-act="ed-toggle">✓ ${tgl}</button>`:''}
+        <button type="button" class="btn" data-act="ed-edit">✏️ Ubah</button>
+        <button type="button" class="btn ghost danger" data-act="del">Padam</button></div>
+    </div>`;
+    m.hidden = false;
+    return;
+  }
   m.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="Ubah ${label}">
-    <div style="display:flex;justify-content:space-between;align-items:center"><h2>${label}</h2><button class="btn ghost sm" data-act="close">Tutup</button></div>
-    ${[i.imgId, ...(Array.isArray(i.imgIds) ? i.imgIds : [])].filter(Boolean).map((id, n) => `<img class="ed-img" src="/_blob/${esc(id)}" alt="Gambar asal ${n+1}" loading="lazy">`).join('')}
+    <div class="dt-top"><h2>Ubah ${label.toLowerCase()}</h2><button type="button" class="dt-x" data-act="close" aria-label="Tutup">×</button></div>
+    ${pics}
     <div class="fields">${fields.map(f => fieldHtml(f, i[f[0]])).join('')}</div>
-    ${i.kind==='event'&&i.date?`<a class="btn sm" style="align-self:flex-start" href="${esc(gcalLink(i))}" target="_blank" rel="noopener">Tambah ke Google Calendar</a>`:''}
     ${i.kind==='person'?'<div class="small muted">Tahun lahir tidak penting untuk peringatan; pilih mana-mana tahun jika tidak tahu.</div>':''}
-    ${i.kind==='expense'?'<button class="btn sm" style="align-self:flex-start" data-act="voucher">Lihat rekod formal</button>':''}
-    <div class="acts"><button class="btn danger" data-act="del">Padam</button>
-      <div class="inline">${tgl?`<button class="btn" data-act="ed-toggle">${tgl}</button>`:''}<button class="btn pri" data-act="save">Simpan</button></div></div>
+    ${extras ? `<div class="inline">${extras}</div>` : ''}
+    <div class="acts"><button type="button" class="btn ghost danger" data-act="del">Padam</button>
+      <div class="inline"><button type="button" class="btn" data-act="ed-back">Batal</button><button type="button" class="btn pri" data-act="save">Simpan</button></div></div>
   </div>`;
   m.hidden = false;
-  const first = m.querySelector('input.f,textarea.f'); if(first) first.focus();
+  if(matchMedia('(pointer: fine)').matches){ const first = m.querySelector('input.f,textarea.f'); if(first) first.focus(); }
 }
 function closeEditor(){ $('#modal').hidden = true; $('#modal').innerHTML = ''; editing = null; ui.voice.open = false; if(rec) try { rec.stop(); } catch(e){} }
 function micToggle(){
@@ -2118,7 +2150,7 @@ Input: ${text}`, {modelTier:'quick', cache:false});
       const id = await addItem(data);
       if(id){
         const when = data.kind==='expense' ? ` · ${money(data.amount)} · ${catName(data.cat)}${data.scope==='bisnes'?' · bisnes':''}` : data.kind==='event' ? ` · ${fmtD(data.date)}${data.start?' '+fmtT(data.start):''}` : data.kind==='reminder' ? ` · ${fmtD(data.at.slice(0,10))} ${fmtT(data.at.slice(11))}` : data.due ? ` · ${fmtD(data.due)}` : data.who ? ` · ${data.who}` : '';
-        toast(`${KIND_L[data.kind]} ditambah${when}`, {label:'Ubah', fn:() => openEditor({id, ...data})});
+        toast(`${KIND_L[data.kind]} ditambah${when}`, {label:'Ubah', fn:() => openEditor({id, ...data}, true)});
       }
       return true;
     } catch(e){ sampleErr(e); return false; }
@@ -2138,7 +2170,7 @@ Input: ${text}`, {modelTier:'quick', cache:false});
     note:{kind:'note', title:text.slice(0,80), body:text, pinned:false, updated:Date.now()}
   }[kind];
   const id = await addItem(base);
-  if(id && ['reminder','event','waiting','note','expense'].includes(kind)) openEditor({id, ...base});
+  if(id && ['reminder','event','waiting','note','expense'].includes(kind)) openEditor({id, ...base}, true);
   else if(id) toast(`${KIND_L[kind]} ditambah`);
   return !!id;
 }
@@ -2285,7 +2317,7 @@ document.addEventListener('click', async ev => {
   if((el = pick('data-payrem'))){ const i = get(el.dataset.payrem); if(!i) return; const p = findPersonByName(i.client);
     compose(`Ingatkan ${i.client} tentang bayaran ${money(i.amount)}${i.desc?' untuk '+i.desc:''}${i.invDate?', invois bertarikh '+fmtD(i.invDate):''}${i.due?', perlu dibayar sebelum '+fmtD(i.due):''}. Sopan tetapi jelas, minta mereka maklumkan tarikh bayaran.`, p && p.id, i.phone); return; }
   if((el = pick('data-renew'))){ const i = get(el.dataset.renew); if(!i || !isYmd(i.date)) return; const nd = addYears(i.date,1);
-    await updItem(i.id, {date:nd}); toast(`Tarikh tamat baharu: ${fmtD(nd)}`, {label:'Ubah', fn:()=>openEditor({...i, date:nd})}); return; }
+    await updItem(i.id, {date:nd}); toast(`Tarikh tamat baharu: ${fmtD(nd)}`, {label:'Ubah', fn:()=>openEditor({...i, date:nd}, true)}); return; }
   if((el = pick('data-contacted'))){ await updItem(el.dataset.contacted, {lastContact:today()}); toast('Direkod: dihubungi hari ini'); return; }
   if((el = pick('data-write'))){ const p = get(el.dataset.write); if(!p) return; const bd = personDates().find(x => x.p.id===p.id && x.in<=14);
     compose(bd ? `Ucapan ${bd.what.toLowerCase()} kepada ${p.name}${bd.in>0?' (tarikhnya '+fmtD(bd.date)+')':''}. Mesra dan ikhlas.` : `Bertanya khabar kepada ${p.name}, sudah lama tak berhubung. Mesra dan santai.`, p.phone?p.id:'', p.phone); return; }
@@ -2335,6 +2367,8 @@ document.addEventListener('click', async ev => {
   const k = act.dataset.act;
   if(k==='close') closeEditor();
   if(k==='save') saveEditor();
+  if(k==='ed-edit' && editing){ openEditor(get(editing.id) || editing, true); return; }
+  if(k==='ed-back' && editing){ const it = get(editing.id); if(it) openEditor(it); else closeEditor(); return; }
   if(k==='ed-toggle'){ const id = editing.id; closeEditor(); toggle(id); }
   if(k==='del'){
     if(!act.classList.contains('arm')){ act.classList.add('arm'); act.textContent = 'Tekan lagi untuk padam'; setTimeout(()=>{ if(act.isConnected){ act.classList.remove('arm'); act.textContent='Padam'; } }, 4000); return; }
@@ -2348,13 +2382,13 @@ document.addEventListener('click', async ev => {
     for(const id of ex) await delItem(id);
     toast('Item contoh dipadam');
   }
-  if(k==='new-note'){ const data = {kind:'note', title:'', body:'', pinned:false, updated:Date.now()}; const id = await addItem(data); if(id) openEditor({id, ...data}); }
+  if(k==='new-note'){ const data = {kind:'note', title:'', body:'', pinned:false, updated:Date.now()}; const id = await addItem(data); if(id) openEditor({id, ...data}, true); }
   if(k==='msg-draft') draftMsg();
   if(k==='msg-copy') copyText(ui.msgText);
   if(k==='msg-save-tpl'){
     if(!ui.msgText.trim()){ toast('Mesej masih kosong.'); return; }
     const data = {kind:'template', name:(ui.msgIntent||ui.msgText).slice(0,40), body:ui.msgText};
-    const id = await addItem(data); if(id) toast('Templat disimpan', {label:'Namakan', fn:()=>openEditor({id, ...data})});
+    const id = await addItem(data); if(id) toast('Templat disimpan', {label:'Namakan', fn:()=>openEditor({id, ...data}, true)});
   }
   if(k==='mail-draft') draftMail();
   if(k==='mail-copy') copyText((ui.mail.su?`Perkara: ${ui.mail.su}\n\n`:'') + ui.mail.out);
@@ -2381,7 +2415,7 @@ document.addEventListener('click', async ev => {
   if(k==='vz-clear'){ ui.voice = {...ui.voice, text:'', res:null, summary:''}; renderVoice(); }
   if(k==='voucher'){ const id = editing && editing.id; closeEditor(); openVoucher(get(id)); }
   if(k==='vch-pdf'){ const e = get($('#modal').dataset.vid); if(e) savePdf([e], `${voucherRef(e)}.pdf`); }
-  if(k==='vch-edit'){ const e = get($('#modal').dataset.vid); closeEditor(); openEditor(e); }
+  if(k==='vch-edit'){ const e = get($('#modal').dataset.vid); closeEditor(); openEditor(e, true); }
   if(k==='exp-sum') expSummary();
   if(k==='exp-clearf'){ ui.exp.cat = ''; ui.exp.day = ''; render(); }
   if(k==='review-save'){ const id = await addItem({kind:'note', title:`Semakan minggu ${fmtD(today())}`, body:ui.review, pinned:false, updated:Date.now()}); if(id) toast('Semakan disimpan sebagai nota'); }
