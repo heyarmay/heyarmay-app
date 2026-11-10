@@ -712,7 +712,7 @@ async function handle(req, env, ctx){
     return T(d.text + '\n\nOpen: https://heyarmay.com' + (kind === 'minggu' ? '/#semakan' : '/'));
   }
 
-  const PNGS = {'/icon-mask-192.png': ICON_MASK_192, '/icon-mask-512.png': ICON_MASK_512, '/favicon.png': ICON_64, '/favicon.svg': ICON_64, '/icon.svg': ICON_64, '/apple-touch-icon.png': ICON_180, '/logo.png': LOGO_PNG};
+  const PNGS = {'/icon-mask-192.png': ICON_MASK_192, '/icon-mask-512.png': ICON_MASK_512, '/favicon.png': ICON_64, '/favicon.svg': ICON_64, '/icon.svg': ICON_64, '/apple-touch-icon.png': ICON_180, '/logo.png': LOGO_PNG, ...SC_PNGS};
   if(PNGS[p]){
     const bin = Uint8Array.from(atob(PNGS[p]), c => c.charCodeAt(0));
     return new Response(bin, {headers: {'content-type': 'image/png', 'cache-control': 'public, max-age=3600'}});

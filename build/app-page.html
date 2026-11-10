@@ -2788,6 +2788,18 @@ function setCapture(){
 async function boot(){
   try { ui.navMore = localStorage.getItem('hy-navmore') === '1'; ui.pushHide = localStorage.getItem('hy-push-hide') === '1'; } catch(e){}
   pushInit();
+  // Pintasan ikon (tekan lama ikon Hey Armay): ?go=speak | write | expense
+  try {
+    const goTo = new URLSearchParams(location.search).get('go');
+    if(goTo){
+      history.replaceState(null, '', location.pathname + (goTo === 'expense' ? '#belanja' : '#hari-ini'));
+      setTimeout(() => {
+        if(goTo === 'speak'){ const v = $('#cap-voice'); if(v && !v.hidden) v.click(); else { document.body.classList.add('hy-cap'); const i = $('#cap-in'); if(i) i.focus(); } }
+        else if(goTo === 'write'){ document.body.classList.add('hy-cap'); const i = $('#cap-in'); if(i) i.focus(); }
+        else if(goTo === 'expense'){ go('belanja'); setTimeout(() => { const a = $('#ex-amt'); if(a) a.focus(); }, 300); }
+      }, 600);
+    }
+  } catch(e){}
   if(window.__standalone){ loadTeam(); setInterval(() => loadTeam(true), 5*60000); loadEnv(); setInterval(() => loadEnv(), 15*60000); }
   try { const sc = localStorage.getItem('pd-scope'); if(sc==='bisnes' || sc==='peribadi') ui.exp.newScope = sc; lastMethod = localStorage.getItem('pd-method') || ''; } catch(e){}
   const h = location.hash.slice(1); if(RENDER[h]) ui.view = h;

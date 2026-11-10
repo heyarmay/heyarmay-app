@@ -29,12 +29,17 @@ ICON_SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs
             '<path d="M180 262l58 58 100-122" fill="none" stroke="url(#g)" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/></svg>')
 MANIFEST = json.dumps({
     'name': 'Hey Armay', 'short_name': 'Hey Armay', 'start_url': '/', 'display': 'standalone',
-    'background_color': '#11152F', 'theme_color': '#EDF0F8', 'lang': 'ms',
+    'background_color': '#11152F', 'theme_color': '#EDF0F8', 'lang': 'en',
     'id': '/',
     'icons': [{'src': '/icon-192.png?v=3', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'any'},
               {'src': '/icon-512.png?v=3', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'any'},
               {'src': '/icon-mask-192.png?v=3', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'maskable'},
-              {'src': '/icon-mask-512.png?v=3', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'}]})
+              {'src': '/icon-mask-512.png?v=3', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'}],
+    'shortcuts': [
+      {'name': 'Speak', 'short_name': 'Speak', 'description': 'Speak and let Claude sort it', 'url': '/?go=speak', 'icons': [{'src': '/sc-speak.png?v=1', 'sizes': '192x192', 'type': 'image/png'}]},
+      {'name': 'Write', 'short_name': 'Write', 'description': 'Quick note or task', 'url': '/?go=write', 'icons': [{'src': '/sc-write.png?v=1', 'sizes': '192x192', 'type': 'image/png'}]},
+      {'name': 'Today', 'short_name': 'Today', 'description': "Today's plan", 'url': '/#hari-ini', 'icons': [{'src': '/sc-today.png?v=1', 'sizes': '192x192', 'type': 'image/png'}]},
+      {'name': 'Log expense', 'short_name': 'Expense', 'description': 'Record spending', 'url': '/?go=expense', 'icons': [{'src': '/sc-expense.png?v=1', 'sizes': '192x192', 'type': 'image/png'}]}]})
 
 HEAD = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">'
@@ -62,6 +67,7 @@ out = (SERVER
        + '\nconst ICON_64 = ' + json.dumps(f64('icon-64.png')) + ';'
        + '\nconst ICON_MASK_192 = ' + json.dumps(f64('icon-mask-192.png')) + ';'
        + '\nconst ICON_MASK_512 = ' + json.dumps(f64('icon-mask-512.png')) + ';'
+       + '\nconst SC_PNGS = ' + json.dumps({'/sc-' + n + '.png': f64('sc-' + n + '.png') for n in ['speak', 'write', 'today', 'expense']}) + ';'
        + '\nconst LOGO_PNG = ' + json.dumps(f64('logo-640.png')) + ';\n')
 (HERE / 'dist').mkdir(exist_ok=True)
 (HERE / 'dist' / 'worker.js').write_text(out)
