@@ -391,12 +391,12 @@ const ui = {
 { const d = new Date(); ui.calMonth = new Date(d.getFullYear(), d.getMonth(), 1); }
 
 const NAV = [
-  [null, [['hari-ini','Hari Ini']]],
-  ['Kerja', [['team','Jadual Team'],['tugasan','Tugasan'],['menunggu','Menunggu'],['bayaran','Bayaran'],['idea','Idea']]],
-  ['Masa', [['peringatan','Peringatan'],['kalendar','Kalendar'],['tarikh','Tarikh Tamat']]],
-  ['Hidup', [['belanja','Belanja'],['bil','Bil'],['matlamat','Matlamat & Tabiat'],['perjalanan','Perjalanan']]],
+  [null, [['hari-ini','Hari Ini'],['tugasan','Tugasan'],['kalendar','Kalendar'],['team','Jadual Team'],['belanja','Belanja'],['nota','Nota']]],
+  ['Kerja', [['menunggu','Menunggu'],['bayaran','Bayaran'],['idea','Idea']]],
+  ['Masa', [['peringatan','Peringatan'],['tarikh','Tarikh Tamat']]],
+  ['Hidup', [['bil','Bil'],['matlamat','Matlamat & Tabiat'],['perjalanan','Perjalanan']]],
   ['Orang', [['orang','Orang'],['mesej','Mesej'],['emel','Emel']]],
-  ['Simpanan', [['nota','Nota & Mesyuarat'],['pautan','Pautan'],['semakan','Semakan Mingguan']]]
+  ['Simpanan', [['pautan','Pautan'],['semakan','Semakan Mingguan']]]
 ];
 
 /* ---------- item schema (drives the editor) ---------- */
@@ -528,10 +528,14 @@ function renderSide(){
     <div class="hj">${esc(hijri(d))}</div>
     <div class="clock">${pad(d.getHours())}:${pad(d.getMinutes())}</div>`;
   const c = counts();
-  $('#nav').innerHTML = NAV.map(([g, list]) => (g?`<div class="g">${g}</div>`:'') + list.map(([k,l]) => {
-    const [n, hot] = c[k] || [0,false];
-    return `<a href="#${k}" data-view="${k}" class="${ui.view===k?'on':''}">${l}${n?`<span class="n ${hot?'hot':''}">${n}</span>`:''}</a>`;
-  }).join('')).join('');
+  const link = ([k,l]) => { const [n, hot] = c[k] || [0,false];
+    return `<a href="#${k}" data-view="${k}" class="${ui.view===k?'on':''}">${l}${n?`<span class="n ${hot?'hot':''}">${n}</span>`:''}</a>`; };
+  const group = ([g, list]) => (g?`<div class="g">${g}</div>`:'') + list.map(link).join('');
+  const rest = NAV.slice(1), inRest = rest.some(([, l]) => l.some(([k]) => k===ui.view));
+  const open = ui.navMore || inRest;
+  const restHot = rest.some(([, l]) => l.some(([k]) => (c[k]||[])[0] && (c[k]||[])[1]));
+  $('#nav').innerHTML = group(NAV[0]) + `<button type="button" class="nav-more ${open?'open':''}" data-navmore aria-expanded="${open}"><span>Bahagian lain</span>${restHot&&!open?'<i class="dot"></i>':''}<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>`
+    + `<div class="nav-rest" ${open?'':'hidden'}>${rest.map(group).join('')}</div>`;
   const st = $('#status');
   st.className = 'status ' + (mode==='db'?'ok':mode==='loading'?'':'bad');
   st.querySelector('span').textContent = mode==='db' ? (window.__standalone ? 'Tersimpan di heyarmay.com' : 'Tersimpan ke akaun anda') : mode==='loading' ? 'Menyambung…' : 'Tidak disimpan dalam paparan ini';
@@ -651,7 +655,7 @@ function vToday(){
     `<div class="row" data-open="${a.i.id}"><span class="kbar rem"></span><span class="time">${esc(fmtT(a.s))}</span>
       <div class="rt"><span class="t">${esc(a.i.title)}</span><span class="meta"><span class="chip rem">peringatan</span><span>${rel(atMs(a.i.at))}</span>${exChip(a.i)}</span></div>
       <button class="chk sun" data-toggle="${a.i.id}" aria-label="Tandakan selesai"></button></div>`).join('')
-    : empty('Tiada acara atau peringatan hari ini. Tambah di kotak atas, cth: "4 petang call supplier".');
+    : empty('Tiada acara atau peringatan hari ini.');
 
   const sumBox = ui.summaryBusy ? `<div class="summary idle">Claude sedang menyusun hari anda…</div>`
     : ui.summary ? `<div class="summary">${esc(ui.summary)}</div>`
@@ -667,22 +671,32 @@ function vToday(){
   const spendRow = `<div class="row" data-view="belanja"><div class="rt"><span class="t">Belanja bulan ini</span><span class="meta"><span>hari ini ${money(spToday)}</span>${bud.total?`<span class="chip ${spPers>bud.total?'late':spPers>=bud.total*.85?'rem':''}">${Math.round(spPers/bud.total*100)}% bajet</span>`:''}</span></div><span class="amt">${money(spMonth)}</span></div>`;
   const moneyHtml = spendRow + (owed.length?`<div class="row" data-view="bayaran"><div class="rt"><span class="t">Belum dibayar klien</span><span class="meta"><span>${owed.length} invois</span>${owed.some(i=>i.due&&i.due<t)?'<span class="chip late">ada yang lewat</span>':''}</span></div><span class="amt">${money(owedSum)}</span></div>`:'') + bills.map(rowBill).join('');
 
+  const quick = [
+    ['tugasan', tk.length, 'tugasan perlu dibuat', tk.some(i => i.due && i.due < t)],
+    ['menunggu', chase.length, 'perlu dikejar', false],
+    ['peringatan', missed.length, 'peringatan terlepas', true],
+    ['bayaran', owed.length, 'belum dibayar klien', owed.some(i => i.due && i.due < t)],
+    ...(team.connected ? [['team', teamShoots(t).length, 'job team hari ini', false]] : [])
+  ];
+  const quickHtml = `<div class="hy-quick">${quick.map(([v, n, l, hot]) => `<a class="hy-q ${n?'':'zero'} ${n&&hot?'hot':''}" href="#${v}" data-view="${v}"><b>${n}</b><span>${l}</span></a>`).join('')}</div>`;
+  const P = (cond, title, body, extra) => cond ? panel(title, body, extra) : '';
   return `<div class="stack">
-    <div class="head"><div><h1>${greet()}.</h1><p>${agenda.length} dalam jadual hari ini · ${tk.length} tugasan perlu perhatian · ${chase.length} perlu dikejar${missed.length?` · ${missed.length} peringatan terlepas`:''}</p></div>
-      ${sample?`<button class="btn" data-act="summary" ${ui.summaryBusy?'disabled':''}>Ringkaskan hari saya</button>`:''}</div>
-    ${exN?`<div class="banner"><span>Ada ${exN} item contoh untuk tunjuk cara sistem ini berfungsi.</span><button class="btn sm" data-act="clear-ex">Padam semua contoh</button></div>`:''}
-    ${sample?sumBox:''}
-    ${habits.length?`<div class="panel"><div class="ph"><h3>Tabiat hari ini</h3>${goto('matlamat','Matlamat & tabiat')}</div><div class="hchips">${habits.map(h=>`<button class="hchip ${h.log&&h.log[t]?'on':''}" data-habit="${h.id}">${esc(h.title)}</button>`).join('')}</div></div>`:''}
+    <div class="head"><div><h1>${greet()}.</h1><p>${agenda.length ? `${agenda.length} perkara dalam jadual hari ini` : 'Jadual hari ini masih kosong'}</p></div>
+      ${sample?`<button class="btn" data-act="summary" ${ui.summaryBusy?'disabled':''}>✨ Ringkaskan hari saya</button>`:''}</div>
+    ${quickHtml}
+    ${exN?`<div class="banner"><span>Ada ${exN} item contoh.</span><button class="btn sm" data-act="clear-ex">Padam semua contoh</button></div>`:''}
+    ${sample && (ui.summary || ui.summaryBusy) ? sumBox : ''}
     <div class="grid">
       ${panel('Jadual hari ini', agendaHtml, goto('kalendar','Kalendar'))}
-      ${team.connected?panel('Team ARMEDIA hari ini', teamTodayHtml(), goto('team','Jadual team')):''}
-      ${panel('Perlu dibuat', tk.length?tk.slice(0,8).map(rowTask).join(''):empty('Tiada tugasan tertunggak.'), goto('tugasan','Semua'))}
-      ${panel('Perlu dikejar', chaseHtml || empty('Tiada siapa perlu dikejar hari ini.'), goto('menunggu','Menunggu'))}
-      ${missed.length?panel('Peringatan terlepas', missed.sort(byAt).map(rowRem).join('')):''}
-      ${panel('Wang', moneyHtml || empty('Tiada bayaran tertunggak atau bil hampir tiba.'), goto('bayaran','Bayaran'))}
-      ${panel('Tarikh penting', datesHtml || empty('Tiada tarikh tamat, hari lahir atau majlis dalam 2 minggu ini.'), goto('tarikh','Tarikh tamat'))}
-      ${panel('7 hari akan datang', soon.length?soon.slice(0,6).map(i=>rowEv(i,true)).join(''):empty('Minggu depan masih kosong.'))}
-      ${panel('Nota disemat', pn.length?pn.slice(0,5).map(n=>`<div class="row" data-open="${n.id}"><div class="rt"><span class="t">${esc(n.title||'Tanpa tajuk')}</span><span class="meta"><span>${esc((n.body||'').slice(0,80))}</span>${exChip(n)}</span></div></div>`).join(''):empty('Semat nota penting supaya ia muncul di sini.'), goto('nota','Nota'))}
+      ${P(tk.length, 'Perlu dibuat', tk.slice(0,6).map(rowTask).join(''), goto('tugasan','Semua'))}
+      ${P(team.connected, 'Team ARMEDIA hari ini', team.connected ? teamTodayHtml() : '', goto('team','Jadual team'))}
+      ${P(chaseHtml, 'Perlu dikejar', chaseHtml, goto('menunggu','Semua'))}
+      ${P(missed.length, 'Peringatan terlepas', missed.sort(byAt).map(rowRem).join(''))}
+      ${P(habits.length, 'Tabiat hari ini', `<div class="hchips">${habits.map(h=>`<button class="hchip ${h.log&&h.log[t]?'on':''}" data-habit="${h.id}">${esc(h.title)}</button>`).join('')}</div>`, goto('matlamat','Semua'))}
+      ${panel('Wang', moneyHtml, goto('belanja','Belanja'))}
+      ${P(datesHtml, 'Tarikh penting', datesHtml, goto('tarikh','Semua'))}
+      ${P(soon.length, '7 hari akan datang', soon.slice(0,6).map(i=>rowEv(i,true)).join(''))}
+      ${P(pn.length, 'Nota disemat', pn.slice(0,5).map(n=>`<div class="row" data-open="${n.id}"><div class="rt"><span class="t">${esc(n.title||'Tanpa tajuk')}</span><span class="meta"><span>${esc((n.body||'').slice(0,80))}</span>${exChip(n)}</span></div></div>`).join(''), goto('nota','Nota'))}
     </div></div>`;
 }
 
@@ -2132,6 +2146,7 @@ document.addEventListener('click', async ev => {
     await updItem(id, {list}); return; }
   if((el = pick('data-tbase'))){ const tr = get(el.dataset.tbase); if(!tr) return;
     await updItem(tr.id, {list:[...(tr.list||[]), ...TRIP_BASE.map(([g,t]) => ({g, t, done:false}))]}); return; }
+  if((el = pick('data-navmore'))){ ui.navMore = !(ui.navMore || el.classList.contains('open')); try { localStorage.setItem('hy-navmore', ui.navMore?'1':''); } catch(e){} renderSide(); return; }
   if((el = pick('data-tcal'))){ const n = Number(el.dataset.tcal), m = ui.teamMonth || new Date();
     if(n===0){ const d = new Date(); ui.teamMonth = new Date(d.getFullYear(), d.getMonth(), 1); ui.teamSel = today(); }
     else ui.teamMonth = new Date(m.getFullYear(), m.getMonth()+n, 1);
@@ -2310,6 +2325,7 @@ function setCapture(){
   render();
 }
 async function boot(){
+  try { ui.navMore = localStorage.getItem('hy-navmore') === '1'; } catch(e){}
   if(window.__standalone){ loadTeam(); setInterval(() => loadTeam(true), 5*60000); }
   try { const sc = localStorage.getItem('pd-scope'); if(sc==='bisnes' || sc==='peribadi') ui.exp.newScope = sc; lastMethod = localStorage.getItem('pd-method') || ''; } catch(e){}
   const h = location.hash.slice(1); if(RENDER[h]) ui.view = h;

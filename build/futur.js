@@ -59,6 +59,7 @@
     x0 = null;
   }, {passive:true});
   matchMedia('(min-width: 821px)').addEventListener('change', ev => { if(ev.matches) set(false); });
+  window.hyDrawer = set;
 })();
 
 // Tukar tema terang / gelap (disimpan dalam pelayar ini)
@@ -83,3 +84,44 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   brand.appendChild(b);
 });
+
+// Telefon: bar bawah (Hari Ini, Kalendar, Cakap, Tulis, Menu) + kotak tulis yang naik dari bawah
+(function(){
+  const cap = document.getElementById('capture'), input = document.getElementById('cap-in');
+  if(!cap) return;
+  const ic = {
+    home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>',
+    cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16.5" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg>',
+    mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5"/></svg>',
+    pen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
+    menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>'
+  };
+  const bar = document.createElement('nav');
+  bar.className = 'hy-tabbar'; bar.setAttribute('aria-label', 'Akses pantas');
+  bar.innerHTML = `<a class="hy-tab" href="#hari-ini" data-view="hari-ini" data-tab="hari-ini">${ic.home}<span>Hari Ini</span></a>
+    <a class="hy-tab" href="#kalendar" data-view="kalendar" data-tab="kalendar">${ic.cal}<span>Kalendar</span></a>
+    <button type="button" class="hy-fab" data-hy="cakap" aria-label="Cakap dan susun"><i>${ic.mic}</i><span>Cakap</span></button>
+    <button type="button" class="hy-tab" data-hy="tulis" aria-label="Tulis cepat">${ic.pen}<span>Tulis</span></button>
+    <button type="button" class="hy-tab" data-hy="menu" aria-label="Semua bahagian">${ic.menu}<span>Menu</span></button>`;
+  document.body.appendChild(bar);
+  const body = document.body;
+  const closeCap = () => body.classList.remove('hy-cap');
+  bar.addEventListener('click', e => {
+    const b = e.target.closest('[data-hy]'); if(!b) return;
+    const k = b.dataset.hy;
+    if(k === 'tulis'){ body.classList.add('hy-cap'); if(input){ input.focus(); } }
+    if(k === 'cakap'){ const v = document.getElementById('cap-voice'); if(v && !v.hidden) v.click(); else { body.classList.add('hy-cap'); if(input) input.focus(); } }
+    if(k === 'menu' && window.hyDrawer) window.hyDrawer(true);
+  });
+  const scrim = document.getElementById('hy-scrim');
+  if(scrim) scrim.addEventListener('click', closeCap);
+  document.addEventListener('keydown', e => { if(e.key === 'Escape') closeCap(); });
+  cap.addEventListener('submit', () => setTimeout(() => { if(!input || !input.value) closeCap(); }, 400));
+  const sync = () => {
+    const v = (typeof render === 'function' && render._v) || location.hash.slice(1) || 'hari-ini';
+    bar.querySelectorAll('[data-tab]').forEach(a => a.classList.toggle('on', a.dataset.tab === v));
+  };
+  const view = document.getElementById('view');
+  if(view && 'MutationObserver' in window) new MutationObserver(sync).observe(view, {childList: true});
+  window.addEventListener('hashchange', sync); sync();
+})();
