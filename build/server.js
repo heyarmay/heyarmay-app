@@ -18,7 +18,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS usage (day TEXT PRIMARY KEY, n INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS sessions (h TEXT PRIMARY KEY, created INTEGER NOT NULL, expires INTEGER NOT NULL)`,
-  `CREATE TABLE IF NOT EXISTS fails (ip TEXT PRIMARY KEY, n INTEGER NOT NULL, until INTEGER NOT NULL)`
+  `CREATE TABLE IF NOT EXISTS fails (ip TEXT PRIMARY KEY, n INTEGER NOT NULL, until INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS ai_usage (day TEXT NOT NULL, model TEXT NOT NULL, calls INTEGER NOT NULL, inp INTEGER NOT NULL, outp INTEGER NOT NULL, usd REAL NOT NULL, PRIMARY KEY (day, model))`
 ];
 const ACCESS_TEAM = 'raspy-bush-7e42';
 const SESSION_DAYS = 90;
@@ -193,8 +194,34 @@ async function askClaude(env, {input, json, tier, images, maxTokens}){
     return {error: 'upstream ' + r.status + ': ' + t.slice(0, 300), status: r.status === 429 ? 429 : 502};
   }
   const j = await r.json();
+  try { await recordUsage(env, body.model, j.usage || {}); } catch(e){}
   const text = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
   return {text, truncated: j.stop_reason === 'max_tokens'};
+}
+
+/* ---------------- kos Claude (anggaran daripada token sebenar setiap panggilan) ---------------- */
+// Harga asas USD per juta token (platform.claude.com/docs/en/about-claude/pricing, Nov 2026)
+function priceUsd(model, inp, outp){
+  if(/haiku-5-5/.test(model)){ const big = inp > 100000; return (inp * (big ? 0.5 : 0.1) + outp * (big ? 2.5 : 0.5)) / 1e6; }
+  if(/sonnet/.test(model)) return (inp * 2 + outp * 10) / 1e6;
+  if(/opus-5-5/.test(model)) return (inp * 4 + outp * 20) / 1e6;
+  return (inp * 2 + outp * 10) / 1e6;
+}
+async function recordUsage(env, model, u){
+  const inp = (Number(u.input_tokens) || 0) + (Number(u.cache_creation_input_tokens) || 0) + (Number(u.cache_read_input_tokens) || 0);
+  const outp = Number(u.output_tokens) || 0;
+  const usd = priceUsd(model, inp, outp);
+  await env.DB.prepare(`INSERT INTO ai_usage (day, model, calls, inp, outp, usd) VALUES (?, ?, 1, ?, ?, ?)
+    ON CONFLICT(day, model) DO UPDATE SET calls = calls + 1, inp = inp + excluded.inp, outp = outp + excluded.outp, usd = usd + excluded.usd`).bind(todayLocal(), model, inp, outp, usd).run();
+}
+async function usdToMyr(env){
+  const t = todayLocal(), hit = await getMeta(env, 'fx_usdmyr');
+  const c = hit ? JSON.parse(hit) : null;
+  if(c && c.date === t) return c;
+  for(const [u, pick] of [['https://api.frankfurter.app/latest?from=USD&to=MYR', d => d.rates && d.rates.MYR], ['https://open.er-api.com/v6/latest/USD', d => d.rates && d.rates.MYR]]){
+    try { const r = await fetch(u); const d = await r.json(); const rate = Number(pick(d)); if(rate > 1 && rate < 10){ const out = {rate, date: t, live: true}; await setMeta(env, 'fx_usdmyr', JSON.stringify(out)); return out; } } catch(e){}
+  }
+  return c || {rate: 4.4, date: t, live: false};
 }
 
 /* ---------------- ringkasan berjadual ---------------- */
@@ -363,6 +390,20 @@ button.ghost:hover{border-color:var(--rose);color:var(--rose)}
 .err{display:none;margin-top:14px;background:var(--rose-soft);color:var(--rose);border:1px solid rgba(197,51,82,.25);border-radius:12px;padding:10px 12px;font-size:.88rem;animation:rise .3s var(--ease) both}
 .ok{display:none;margin-top:14px;background:var(--accent-soft);color:var(--accent);border:1px solid rgba(var(--glow),.3);border-radius:12px;padding:10px 12px;font-size:.88rem;animation:rise .3s var(--ease) both}
 .hint{color:var(--muted);font-size:.8rem;margin-top:6px}
+.use h2,.pw-h{font-size:1rem;font-weight:650;margin:22px 0 10px;letter-spacing:-.01em}
+.use-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.use-grid div{display:flex;flex-direction:column;gap:2px;padding:10px;border-radius:12px;border:1px solid var(--line);background:var(--field)}
+.use-grid span{font-size:.72rem;color:var(--muted);font-weight:600}
+.use-grid b{font-size:1.05rem;font-weight:650;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.use-grid small{font-size:.7rem;color:var(--muted)}
+.use-bars{display:flex;align-items:flex-end;gap:2px;height:64px;margin-top:12px;padding:0 2px;border-bottom:1px solid var(--line)}
+.use-bars i{flex:1;min-width:0;border-radius:3px 3px 0 0;background:var(--grad);opacity:.85}
+.use-axis{display:flex;justify-content:space-between;font-size:.68rem;color:var(--muted);margin-top:4px}
+.use-models{display:flex;flex-direction:column;margin-top:10px}
+.use-models div{display:flex;justify-content:space-between;gap:10px;font-size:.82rem;padding:6px 0;border-bottom:1px solid var(--line)}
+.use-models span{color:var(--muted)}
+.use-models b{white-space:nowrap;font-variant-numeric:tabular-nums}
+.use-link{display:inline-block;margin-top:6px;font-size:.85rem}
 a{color:var(--accent);font-weight:600;text-decoration:none}
 hr{border:0;border-top:1px solid var(--line);margin:26px 0 8px}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -439,6 +480,13 @@ function accountPage(user){
   const safe = String(user).replace(/[^a-z0-9._@-]/g, '');
   return pageShell('Akaun', `<a href="/">← Kembali</a>
 <h1 style="margin-top:14px">Akaun</h1><p class="lead">Log masuk sebagai <b>${safe}</b></p>
+<section class="use" aria-labelledby="use-h"><h2 id="use-h">Kos Claude AI</h2>
+<div class="use-grid"><div><span>Hari ini</span><b id="u-today">…</b><small id="u-today-n"></small></div><div><span>Bulan ini</span><b id="u-month">…</b><small id="u-month-n"></small></div><div><span>Sejak mula</span><b id="u-all">…</b><small id="u-all-n"></small></div></div>
+<div class="use-bars" id="u-bars" aria-label="Kos 30 hari"></div><div class="use-axis"><span>30 hari lalu</span><span>Hari ini</span></div>
+<div class="use-models" id="u-models"></div>
+<p class="hint" id="u-note"></p>
+<a class="use-link" href="https://platform.claude.com/dashboard" target="_blank" rel="noopener">Baki kredit & bil sebenar di Claude Console ↗</a></section>
+<hr><h2 class="pw-h">Tukar kata laluan</h2>
 <form id="f" novalidate>
 <input type="text" name="username" autocomplete="username" value="${safe}" hidden>
 ${pwField('o', 'current-password', 'Kata laluan semasa')}
@@ -461,7 +509,20 @@ $('#f').addEventListener('submit', async ev => {
   } catch(e){ showErr('Tiada sambungan. Cuba lagi.'); }
   btn.disabled = false; btn.textContent = 'Tukar kata laluan';
 });
-$('#out').addEventListener('click', async () => { await post('/api/auth/logout', {}); location.href = '/'; });`);
+$('#out').addEventListener('click', async () => { await post('/api/auth/logout', {}); location.href = '/'; });
+(async () => {
+  try {
+    const u = await (await fetch('/api/usage', {credentials:'same-origin', cache:'no-store'})).json();
+    const rm = v => 'RM ' + (v < 0.01 && v > 0 ? v.toFixed(4) : v.toFixed(2));
+    const set = (k, o) => { $('#u-' + k).textContent = rm(o.rm); $('#u-' + k + '-n').textContent = o.calls + ' kali guna'; };
+    set('today', u.today); set('month', u.month); set('all', u.all);
+    const mx = Math.max.apply(null, u.days.map(d => d.rm).concat([0.0001]));
+    $('#u-bars').innerHTML = u.days.map(d => '<i title="' + d.day + ': RM ' + d.rm.toFixed(4) + ' · ' + d.calls + ' kali" style="height:' + Math.max(2, Math.round(d.rm / mx * 100)) + '%"></i>').join('');
+    const nm = m => /haiku/.test(m) ? 'Haiku (pantas: kategori, tangkap cepat, resit)' : /sonnet/.test(m) ? 'Sonnet (susun suara & gambar, ringkasan)' : m;
+    $('#u-models').innerHTML = u.models.map(x => '<div><span>' + nm(x.model) + '</span><b>' + rm(x.rm) + '</b></div>').join('');
+    $('#u-note').textContent = 'Anggaran ikut token sebenar setiap panggilan dan harga rasmi Claude. Kadar tukaran: 1 USD = RM ' + u.rate.toFixed(3) + (u.rateLive ? '' : ' (anggaran)') + '. Dikira sejak ' + u.since + '.';
+  } catch(e){ $('#u-note').textContent = 'Tak dapat memuatkan data penggunaan.'; }
+})();`);
 }
 
 /* ---------------- router ---------------- */
@@ -691,6 +752,20 @@ async function handle(req, env, ctx){
   }
 
   // Tetapan: pautan ringkasan & penggunaan
+  if(p === '/api/usage' && m === 'GET'){
+    const fx = await usdToMyr(env), t = todayLocal(), ym = t.slice(0, 7), from = addDays(t, -29);
+    const rows = (await env.DB.prepare('SELECT day, model, calls, inp, outp, usd FROM ai_usage ORDER BY day').all()).results || [];
+    const sum = arr => arr.reduce((a, r) => ({calls: a.calls + r.calls, inp: a.inp + r.inp, outp: a.outp + r.outp, usd: a.usd + r.usd}), {calls: 0, inp: 0, outp: 0, usd: 0});
+    const withRm = o => ({...o, rm: Math.round(o.usd * fx.rate * 10000) / 10000});
+    const days = [];
+    for(let d = from; d <= t; d = addDays(d, 1)) days.push(withRm({day: d, ...sum(rows.filter(r => r.day === d))}));
+    const models = {};
+    rows.filter(r => r.day.startsWith(ym)).forEach(r => { models[r.model] = sum([models[r.model] || {calls: 0, inp: 0, outp: 0, usd: 0}, r]); });
+    const since = rows.length ? rows[0].day : t;
+    return J({rate: fx.rate, rateLive: fx.live, rateDate: fx.date, since,
+      today: withRm(sum(rows.filter(r => r.day === t))), month: withRm(sum(rows.filter(r => r.day.startsWith(ym)))), all: withRm(sum(rows)),
+      days, models: Object.entries(models).map(([model, v]) => withRm({model, ...v}))});
+  }
   if(p === '/api/settings' && m === 'GET'){
     let key = await getMeta(env, 'digest_key');
     if(!key){ key = randomKey(); await setMeta(env, 'digest_key', key); }
