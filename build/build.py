@@ -30,14 +30,17 @@ ICON_SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs
 MANIFEST = json.dumps({
     'name': 'Hey Armay', 'short_name': 'Hey Armay', 'start_url': '/', 'display': 'standalone',
     'background_color': '#11152F', 'theme_color': '#EDF0F8', 'lang': 'ms',
-    'icons': [{'src': '/icon-192.png', 'sizes': '192x192', 'type': 'image/png'},
-              {'src': '/icon-512.png', 'sizes': '512x512', 'type': 'image/png'}]})
+    'id': '/',
+    'icons': [{'src': '/icon-192.png?v=3', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'any'},
+              {'src': '/icon-512.png?v=3', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'any'},
+              {'src': '/icon-mask-192.png?v=3', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'maskable'},
+              {'src': '/icon-mask-512.png?v=3', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'}]})
 
 HEAD = ('<!doctype html><html lang="ms"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
         '<meta name="theme-color" content="#EDF0F8">'
-        '<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/favicon.png" type="image/png">'
-        '<link rel="apple-touch-icon" href="/apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes">'
+        '<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/favicon.png?v=3" type="image/png">'
+        '<link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3"><meta name="apple-mobile-web-app-capable" content="yes">'
         '<meta name="apple-mobile-web-app-title" content="Hey Armay">'
         '<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}'
         'body{margin:0;font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>'
@@ -57,6 +60,8 @@ out = (SERVER
        + '\nconst ICON_512 = ' + json.dumps(f64('icon-512.png')) + ';'
        + '\nconst ICON_180 = ' + json.dumps(f64('icon-180.png')) + ';'
        + '\nconst ICON_64 = ' + json.dumps(f64('icon-64.png')) + ';'
+       + '\nconst ICON_MASK_192 = ' + json.dumps(f64('icon-mask-192.png')) + ';'
+       + '\nconst ICON_MASK_512 = ' + json.dumps(f64('icon-mask-512.png')) + ';'
        + '\nconst LOGO_PNG = ' + json.dumps(f64('logo-640.png')) + ';\n')
 (HERE / 'dist').mkdir(exist_ok=True)
 (HERE / 'dist' / 'worker.js').write_text(out)

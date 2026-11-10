@@ -391,7 +391,7 @@ document.querySelectorAll('.eye').forEach(b => b.addEventListener('click', () =>
 }));`;
 const pageShell = (title, body, script) => `<!doctype html><html lang="ms"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#EDF0F8">
-<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/favicon.png" type="image/png"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/favicon.png?v=3" type="image/png"><link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Hey Armay">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500&display=swap">
 <title>${title}</title><script>(function(){var t;try{t=localStorage.getItem("hy-theme")}catch(e){}document.documentElement.setAttribute("data-hy",t==="dark"?"dark":"light");})();</script><style>${PAGE_CSS}</style></head><body><main><div class="card">
@@ -481,7 +481,7 @@ async function handle(req, env, ctx){
     return T(d.text + '\n\nBuka: https://heyarmay.com' + (kind === 'minggu' ? '/#semakan' : '/'));
   }
 
-  const PNGS = {'/favicon.png': ICON_64, '/favicon.svg': ICON_64, '/icon.svg': ICON_64, '/apple-touch-icon.png': ICON_180, '/logo.png': LOGO_PNG};
+  const PNGS = {'/icon-mask-192.png': ICON_MASK_192, '/icon-mask-512.png': ICON_MASK_512, '/favicon.png': ICON_64, '/favicon.svg': ICON_64, '/icon.svg': ICON_64, '/apple-touch-icon.png': ICON_180, '/logo.png': LOGO_PNG};
   if(PNGS[p]){
     const bin = Uint8Array.from(atob(PNGS[p]), c => c.charCodeAt(0));
     return new Response(bin, {headers: {'content-type': 'image/png', 'cache-control': 'public, max-age=3600'}});
