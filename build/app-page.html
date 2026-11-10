@@ -1211,9 +1211,11 @@ function vReminders(){
 /* ---------- Jadual team ARMEDIA (baca sahaja dari armedia.my) ---------- */
 let team = {connected:null, jobs:[], leaves:[], from:'', to:'', at:0, busy:false};
 function teamRange(){
-  const m = ui.calMonth, a = ymd(new Date(m.getFullYear(), m.getMonth(), 1)), b = ymd(new Date(m.getFullYear(), m.getMonth()+1, 0));
+  const ms = [ui.calMonth, ui.teamMonth || ui.calMonth];
+  const a0 = ms.map(m => ymd(new Date(m.getFullYear(), m.getMonth(), 1))).sort()[0];
+  const b0 = ms.map(m => ymd(new Date(m.getFullYear(), m.getMonth()+1, 0))).sort().pop();
   const t = today();
-  return [addDays(a < t ? a : t, -7), addDays(b > addDays(t,21) ? b : addDays(t,21), 7)];
+  return [addDays(a0 < t ? a0 : t, -7), addDays(b0 > addDays(t,21) ? b0 : addDays(t,21), 7)];
 }
 async function loadTeam(force){
   if(!window.__standalone || team.busy) return;
@@ -1251,12 +1253,8 @@ const teamLate = () => { const now = new Date(); return team.jobs.filter(j => te
 const teamDueIn = (a, b) => team.jobs.filter(j => teamOpen(j) && teamWhoJob(j) && j.deadline.slice(0,10) >= a && j.deadline.slice(0,10) <= b && !teamLate().includes(j));
 const ARM_URL = 'https://armedia.my/app';
 function rowShoot(g){
-  const st = [...g.status], stL = st.length === 1 ? st[0] : 'Dalam Tracker Video';
-  const chs = g.chans.filter(c => c.ch || c.editor).map(c => `<span class="chip">${c.ch?esc(c.ch)+' · ':''}✂️ ${esc(c.editor||'—')}</span>`).join('');
   return `<a class="row" href="${ARM_URL}#/schedule?d=${esc(g.date)}" target="_blank" rel="noopener"><span class="kbar team"></span><span class="time">${esc(g.time ? fmtT(g.time) : '—')}</span>
-    <div class="rt"><span class="t">${esc(g.title||'Shooting')}${g.urgent?' <span class="chip late">URGENT</span>':''}</span>
-    <span class="meta"><span class="chip org">${esc(stL)}</span>${g.location?`<span>${esc(g.location)}</span>`:''}${g.reviewers.size?`<span>🎤 ${esc([...g.reviewers].join(', '))}</span>`:''}</span>
-    ${chs?`<span class="tm-chs">${chs}</span>`:''}</div></a>`;
+    <div class="rt"><span class="t">${esc(g.title||'Job')}${g.urgent?' <span class="chip late">URGENT</span>':''}</span>${g.location?`<span class="meta"><span>${esc(g.location)}</span></span>`:''}</div></a>`;
 }
 function rowDeadline(j){
   const dl = j.deadline, d = new Date(dl.length > 10 ? dl : dl + 'T23:59'), h = (d - Date.now()) / 36e5;
@@ -1268,11 +1266,10 @@ function rowDeadline(j){
 }
 function teamOffOn(day){ return team.leaves.filter(l => l.from <= day && l.to >= day && (!ui.teamWho || l.name === ui.teamWho)); }
 function teamTodayHtml(){
-  const t = today(), sh = teamShoots(t), late = teamLate(), due = teamDueIn(t, t), off = teamOffOn(t);
-  const out = [...sh.map(rowShoot), ...due.map(rowDeadline)];
-  if(late.length) out.push(`<a class="row" href="#team" data-view="team"><span class="kbar" style="background:var(--rose)"></span><div class="rt"><span class="t">${late.length} video lewat deadline</span><span class="meta"><span>${esc(late.slice(0,3).map(j=>j.title).join(' · '))}${late.length>3?'…':''}</span></span></div></a>`);
-  if(off.length) out.push(`<div class="row" style="cursor:default"><div class="rt"><span class="t">Cuti hari ini</span><span class="meta"><span>${esc(off.map(l => l.name + (l.half?' (separuh hari)':'')).join(', '))}</span></span></div></div>`);
-  return out.join('') || empty('Tiada shooting atau deadline video team hari ini.');
+  const t = today(), sh = teamShoots(t), late = teamLate();
+  const out = sh.map(rowShoot);
+  if(late.length) out.push(`<a class="row" href="#team" data-view="team"><span class="kbar" style="background:var(--rose)"></span><div class="rt"><span class="t">${late.length} video lewat deadline</span><span class="meta"><span>Semak dalam armedia.my</span></span></div></a>`);
+  return out.join('') || empty('Tiada job team hari ini.');
 }
 function teamConn(){
   if(!window.__standalone) return '';
@@ -1283,31 +1280,43 @@ function teamConn(){
 }
 function vTeam(){
   const t = today();
-  const head = `<div class="head"><div><h1>Jadual Team</h1><p>Shooting, deadline video dan cuti team ARMEDIA, terus dari armedia.my. Paparan sahaja; ubah jadual dalam armedia.my.</p></div>
-    <div class="inline"><a class="btn" href="${ARM_URL}#/schedule" target="_blank" rel="noopener">Buka armedia.my</a><button class="btn ghost" data-tref="1">${team.busy?'Memuat…':'Muat semula'}</button></div></div>`;
+  const head = `<div class="head"><div><h1>Jadual Team</h1><p>Job team ARMEDIA dalam bentuk kalendar. Butiran penuh dalam armedia.my.</p></div>
+    <a class="btn" href="${ARM_URL}#/schedule" target="_blank" rel="noopener">Buka armedia.my</a></div>`;
   if(!window.__standalone) return `<div class="stack">${head}${empty('Jadual team hanya tersedia di heyarmay.com.')}</div>`;
   if(team.connected === null) return `<div class="stack">${head}${empty('Memuatkan jadual team…')}</div>`;
   if(!team.connected) return `<div class="stack">${head}${teamConn()}</div>`;
-  const people = [...new Set(team.jobs.flatMap(j => [...j.reviewers, j.editor, ...j.channels.map(c => c.editor)]).filter(Boolean))].sort();
-  const who = `<div class="filters"><button class="${!ui.teamWho?'on':''}" data-twho="">Semua</button>${people.map(n => `<button class="${ui.teamWho===n?'on':''}" data-twho="${esc(n)}">${esc(n)}</button>`).join('')}</div>`;
-  const days = [...Array(14)].map((_, i) => addDays(t, i));
-  const sched = days.map(d => {
-    const sh = teamShoots(d), off = teamOffOn(d);
-    if(!sh.length && !off.length && d !== t) return '';
-    const dd = parseYmd(d);
-    return `<div class="dayhead"><span>${HARI[dd.getDay()]}, ${dd.getDate()} ${BLN[dd.getMonth()]}${d===t?' · hari ini':''}</span>${off.length?`<span>Cuti: ${esc(off.map(l=>l.name).join(', '))}</span>`:''}</div>${sh.length?sh.map(rowShoot).join(''):empty('Tiada shooting.')}`;
-  }).join('');
-  const late = teamLate().sort((a,b) => a.deadline.localeCompare(b.deadline));
-  const due = teamDueIn(t, addDays(t, 7)).sort((a,b) => a.deadline.localeCompare(b.deadline));
-  const chk = team.jobs.filter(j => TEAM_CHECK.includes(j.status) && teamWhoJob(j)).sort((a,b) => String(a.deadline).localeCompare(String(b.deadline)));
-  return `<div class="stack">${head}${people.length?who:''}
+  const m = ui.teamMonth || (ui.teamMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const y = m.getFullYear(), mo = m.getMonth();
+  const shootsIn = (a, b) => { let n = 0; for(let d = a; d <= b; d = addDays(d,1)) n += teamShoots(d).length; return n; };
+  const wkStart = addDays(t, -((parseYmd(t).getDay()+6)%7));
+  const mA = ymd(new Date(y, mo, 1)), mB = ymd(new Date(y, mo+1, 0));
+  const late = teamLate().length;
+  const stats = `<div class="panel"><div class="stat">
+    <div><b>${teamShoots(t).length}</b><span>job hari ini</span></div>
+    <div><b>${teamShoots(addDays(t,1)).length}</b><span>job esok</span></div>
+    <div><b>${shootsIn(wkStart, addDays(wkStart,6))}</b><span>job minggu ini</span></div>
+    <div><b>${shootsIn(mA, mB)}</b><span>job ${BLN[mo]}</span></div>
+    <div><b style="${late?'color:var(--rose)':''}">${late}</b><span>video lewat deadline</span></div>
+  </div></div>`;
+  const off = (new Date(y,mo,1).getDay()+6)%7, dim = new Date(y,mo+1,0).getDate(), cells = Math.ceil((off+dim)/7)*7;
+  let html = '';
+  for(let c=0;c<cells;c++){
+    const d = new Date(y,mo,1-off+c), s = ymd(d), sh = teamShoots(s);
+    const chips = sh.slice(0,2).map(g => `<span class="ev a">${g.time?esc(g.time)+' ':''}${esc(g.title)}</span>`).join('');
+    html += `<button type="button" class="d ${d.getMonth()!==mo?'out':''} ${s===t?'today':''} ${s===ui.teamSel?'sel':''}" data-tday="${s}" aria-label="${d.getDate()} ${BLN[d.getMonth()]}, ${sh.length} job">
+      <span class="dn">${d.getDate()}</span>${chips}${sh.length>2?`<span class="more">+${sh.length-2} lagi</span>`:''}<span class="dots">${sh.slice(0,4).map(()=>'<i class="a"></i>').join('')}</span></button>`;
+  }
+  const sel = ui.teamSel || t, sd = parseYmd(sel), list = teamShoots(sel);
+  return `<div class="stack">${head}${stats}
     <div class="grid two">
-      ${panel('Shooting 14 hari', `<div class="list">${sched}</div>`)}
-      <div class="stack">
-        ${panel(`Lewat deadline${late.length?` (${late.length})`:''}`, late.length?late.map(rowDeadline).join(''):empty('Tiada video lewat. Bagus.'))}
-        ${panel('Deadline 7 hari', due.length?due.map(rowDeadline).join(''):empty('Tiada deadline video dalam 7 hari.'))}
-        ${chk.length?panel(`Tunggu client / sedia post (${chk.length})`, chk.map(j => `<a class="row" href="${ARM_URL}" target="_blank" rel="noopener"><span class="kbar" style="background:var(--sky)"></span><div class="rt"><span class="t">${esc(j.title||'Video')}</span><span class="meta"><span class="chip ev">${esc(j.status)}</span>${j.channels[0]?`<span class="chip">${esc(j.channels[0].ch)}</span>`:''}${j.deadline?`<span>deadline ${esc(fmtD(j.deadline.slice(0,10)))}</span>`:''}</span></div></a>`).join('')):''}
+      <div class="cal">
+        <div class="ch"><button class="btn sm" data-tcal="-1" aria-label="Bulan sebelum">‹</button>
+          <h2>${BLN[mo]} ${y}</h2>
+          <div class="inline"><button class="btn sm ghost" data-tcal="0">Hari ini</button><button class="btn sm" data-tcal="1" aria-label="Bulan seterusnya">›</button></div></div>
+        <div class="wk">${['Isn','Sel','Rab','Kha','Jum','Sab','Ahd'].map(x=>`<div>${x}</div>`).join('')}</div>
+        <div class="days">${html}</div>
       </div>
+      ${panel(`${HARI[sd.getDay()]}, ${sd.getDate()} ${BLN[sd.getMonth()]} · ${list.length} job`, list.length ? list.map(rowShoot).join('') : empty('Tiada job pada hari ini.'))}
     </div></div>`;
 }
 
@@ -2123,8 +2132,11 @@ document.addEventListener('click', async ev => {
     await updItem(id, {list}); return; }
   if((el = pick('data-tbase'))){ const tr = get(el.dataset.tbase); if(!tr) return;
     await updItem(tr.id, {list:[...(tr.list||[]), ...TRIP_BASE.map(([g,t]) => ({g, t, done:false}))]}); return; }
-  if((el = pick('data-twho'))){ ui.teamWho = el.dataset.twho; render(); return; }
-  if((el = pick('data-tref'))){ loadTeam(true); return; }
+  if((el = pick('data-tcal'))){ const n = Number(el.dataset.tcal), m = ui.teamMonth || new Date();
+    if(n===0){ const d = new Date(); ui.teamMonth = new Date(d.getFullYear(), d.getMonth(), 1); ui.teamSel = today(); }
+    else ui.teamMonth = new Date(m.getFullYear(), m.getMonth()+n, 1);
+    render(); loadTeam(); return; }
+  if((el = pick('data-tday'))){ ui.teamSel = el.dataset.tday; render(); return; }
   if((el = pick('data-cal'))){ const n = Number(el.dataset.cal), m = ui.calMonth;
     if(n===0){ const d = new Date(); ui.calMonth = new Date(d.getFullYear(), d.getMonth(), 1); ui.calSel = today(); }
     else ui.calMonth = new Date(m.getFullYear(), m.getMonth()+n, 1);
