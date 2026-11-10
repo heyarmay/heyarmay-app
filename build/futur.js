@@ -109,10 +109,19 @@ document.addEventListener('DOMContentLoaded', () => {
   bar.addEventListener('click', e => {
     const b = e.target.closest('[data-hy]'); if(!b) return;
     const k = b.dataset.hy;
-    if(k === 'tulis'){ body.classList.add('hy-cap'); if(input){ input.focus(); } }
+    if(k === 'tulis'){ body.classList.add('hy-cap'); kbFit(); }
     if(k === 'cakap'){ const v = document.getElementById('cap-voice'); if(v && !v.hidden) v.click(); else { body.classList.add('hy-cap'); if(input) input.focus(); } }
     if(k === 'menu' && window.hyDrawer) window.hyDrawer(true);
   });
+  // Papan kekunci: pastikan kotak tulis sentiasa di atas papan kekunci (iPhone & Android)
+  const vv = window.visualViewport;
+  function kbFit(){
+    if(!vv) return;
+    const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    document.documentElement.style.setProperty('--kb', (kb > 60 ? kb : 0) + 'px');
+  }
+  if(vv){ vv.addEventListener('resize', kbFit); vv.addEventListener('scroll', kbFit); }
+  if(input) input.addEventListener('focus', () => setTimeout(kbFit, 250));
   const scrim = document.getElementById('hy-scrim');
   if(scrim) scrim.addEventListener('click', closeCap);
   document.addEventListener('keydown', e => { if(e.key === 'Escape') closeCap(); });

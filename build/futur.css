@@ -256,9 +256,11 @@ select option{background:var(--solid);color:var(--ink)}
   .hy-q b{font-size:1.35rem}
   .hy-q span{font-size:.7rem;line-height:1.25}
   .capture{display:none}
-  body.hy-cap .capture{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:60;margin:0;border-radius:22px 22px 0 0;
+  body.hy-cap .capture{display:flex;position:fixed;left:0;right:0;bottom:var(--kb,0px);z-index:60;margin:0;border-radius:22px 22px 0 0;transition:bottom .15s ease-out;
     padding:22px 14px calc(16px + env(safe-area-inset-bottom,0px));animation:hy-spin 9s linear infinite,hy-up .32s var(--ease) both;box-shadow:0 -20px 60px rgba(0,0,0,.25)}
   body.hy-cap .capture::before{content:"";position:absolute;top:8px;left:50%;width:40px;height:4px;margin-left:-20px;border-radius:4px;background:var(--line)}
+  body.hy-cap .capture .btn,body.hy-cap .capture select{min-height:48px}
+  body.hy-cap #cap-voice,body.hy-cap #cap-pic{min-width:56px}
   body.hy-cap .capture input{font-size:16px;min-height:48px;background:var(--field);border-radius:12px;padding:12px 14px;margin-bottom:6px}
   body.hy-cap #hy-scrim{opacity:1;pointer-events:auto}
   body.hy-cap{overflow:hidden}
