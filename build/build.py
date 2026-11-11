@@ -68,6 +68,7 @@ out = (SERVER
        + '\nconst ICON_MASK_192 = ' + json.dumps(f64('icon-mask-192.png')) + ';'
        + '\nconst ICON_MASK_512 = ' + json.dumps(f64('icon-mask-512.png')) + ';'
        + '\nconst SC_PNGS = ' + json.dumps({'/sc-' + n + '.png': f64('sc-' + n + '.png') for n in ['speak', 'write', 'today', 'expense']}) + ';'
+       + '\nconst WIDGET_APK = ' + json.dumps(f64('HeyArmayWidget.apk')) + ';'
        + '\nconst LOGO_PNG = ' + json.dumps(f64('logo-640.png')) + ';\n')
 (HERE / 'dist').mkdir(exist_ok=True)
 (HERE / 'dist' / 'worker.js').write_text(out)

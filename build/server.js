@@ -562,8 +562,8 @@ input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--glow),.15
 .f input{padding-right:70px}
 .eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--muted);font:inherit;font-size:.8rem;font-weight:600;padding:8px;cursor:pointer}
 .eye:hover{color:var(--accent)}
-button.go{width:100%;margin-top:24px;border:0;border-radius:12px;background:var(--grad);color:var(--on-accent);font:inherit;font-weight:700;padding:14px;cursor:pointer;transition:box-shadow .2s,transform .12s var(--ease)}
-button.go:hover{box-shadow:0 0 26px rgba(var(--glow),.35)}
+button.go,a.go{width:100%;margin-top:24px;border:0;border-radius:12px;background:var(--grad);color:var(--on-accent);font:inherit;font-weight:700;padding:14px;cursor:pointer;transition:box-shadow .2s,transform .12s var(--ease)}
+button.go:hover,a.go:hover{box-shadow:0 0 26px rgba(var(--glow),.35)}
 button.go:active{transform:scale(.98)}
 button.go:disabled{opacity:.75;cursor:progress;background-size:200% 100%;animation:shimmer 1.2s linear infinite}
 .nt-b{display:flex;flex-direction:column;gap:0}.nt-b [hidden]{display:none}
@@ -662,7 +662,10 @@ function accountPage(user){
   const safe = String(user).replace(/[^a-z0-9._@-]/g, '');
   return pageShell('Account', `<a href="/">← Back</a>
 <h1 style="margin-top:14px">Account</h1><p class="lead">Signed in as <b>${safe}</b></p>
-<section class="use" aria-labelledby="use-h"><h2 id="use-h">Claude AI cost</h2>
+<section class="use" aria-labelledby="wd-h"><h2 id="wd-h">Phone widget</h2>
+<p class="hint" id="wd-s" style="margin:4px 0 12px">Shows today's next event, tasks, invoices, team jobs and weather on your Android home screen. On your Android phone: download and install the app (step 1), then tap Connect (step 2).</p>
+<div class="nt-b"><a class="go" id="wd-dl" href="/HeyArmayWidget.apk" download style="display:block;text-align:center;text-decoration:none;box-sizing:border-box">1. Download the widget app</a><button class="go" id="wd-on" type="button">2. Connect widget on this phone</button><button class="ghost" id="wd-off" type="button">Disconnect all widgets</button></div></section>
+<hr><section class="use" aria-labelledby="use-h"><h2 id="use-h">Claude AI cost</h2>
 <div class="use-grid"><div><span>Today</span><b id="u-today">…</b><small id="u-today-n"></small></div><div><span>This month</span><b id="u-month">…</b><small id="u-month-n"></small></div><div><span>Since start</span><b id="u-all">…</b><small id="u-all-n"></small></div></div>
 <div class="use-bars" id="u-bars" aria-label="Cost over 30 days"></div><div class="use-axis"><span>30 days ago</span><span>Today</span></div>
 <div class="use-models" id="u-models"></div>
@@ -671,9 +674,6 @@ function accountPage(user){
 <hr><section class="use" aria-labelledby="nt-h"><h2 id="nt-h">Morning notification</h2>
 <p class="hint" id="nt-s" style="margin:4px 0 12px">Every day at 8:00 am, a notification on this device with today's schedule, team jobs, tasks and weather.</p>
 <div class="nt-b"><button class="go" id="nt-on" type="button" hidden>Turn on for this device</button><button class="ghost" id="nt-test" type="button" hidden>Send a preview now</button><button class="ghost" id="nt-off" type="button" hidden>Turn off on this device</button></div></section>
-<hr><section class="use" aria-labelledby="wd-h"><h2 id="wd-h">Phone widget</h2>
-<p class="hint" id="wd-s" style="margin:4px 0 12px">Shows today's next event, tasks, invoices, team jobs and weather on your Android home screen. Install the Hey Armay Widget app first, then tap Connect on that phone.</p>
-<div class="nt-b"><button class="go" id="wd-on" type="button">Connect widget on this phone</button><button class="ghost" id="wd-off" type="button">Disconnect all widgets</button></div></section>
 <hr><h2 class="pw-h">Change password</h2>
 <form id="f" novalidate>
 <input type="text" name="username" autocomplete="username" value="${safe}" hidden>
@@ -845,6 +845,10 @@ async function handle(req, env, ctx){
     await setPassword(env, auth.user, b.key);
     await env.DB.prepare('DELETE FROM sessions').run();
     return J({ok: true}, 200, {'set-cookie': setCookie(await newSession(env))});
+  }
+  if(p === '/HeyArmayWidget.apk' && m === 'GET'){
+    const bin = Uint8Array.from(atob(WIDGET_APK), c => c.charCodeAt(0));
+    return new Response(bin, {headers: {'content-type': 'application/vnd.android.package-archive', 'content-disposition': 'attachment; filename="HeyArmayWidget.apk"', 'cache-control': 'no-store'}});
   }
   // Widget telefon: sambung / putus
   if(p === '/api/widget/connect' && m === 'POST'){
