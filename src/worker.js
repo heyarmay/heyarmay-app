@@ -850,6 +850,18 @@ async function handle(req, env, ctx){
     const bin = Uint8Array.from(atob(WIDGET_APK), c => c.charCodeAt(0));
     return new Response(bin, {headers: {'content-type': 'application/vnd.android.package-archive', 'content-disposition': 'attachment; filename="HeyArmayWidget.apk"', 'cache-control': 'no-store'}});
   }
+  // SEMENTARA: tinjau struktur armedia (baca sahaja)
+  if(p === '/api/armedia/inspect' && m === 'GET' && env.ARMEDIA_DB){
+    const db = env.ARMEDIA_DB;
+    const types = (await db.prepare('SELECT type, COUNT(*) AS n, MAX(updated_at) AS u FROM records GROUP BY type ORDER BY n DESC').all()).results || [];
+    const want = (url.searchParams.get('types') || '').split(',').filter(Boolean).slice(0, 8);
+    const samples = {};
+    for(const ty of want){
+      const rows = (await db.prepare('SELECT id, data, created_at, updated_at FROM records WHERE type = ? ORDER BY updated_at DESC LIMIT 3').bind(ty).all()).results || [];
+      samples[ty] = rows.map(r => { let d = {}; try { d = JSON.parse(r.data); } catch(e){} const o = {}; for(const [k, v] of Object.entries(d)) o[k] = typeof v === 'string' ? v.slice(0, 80) : Array.isArray(v) ? '[' + v.length + ']' + JSON.stringify(v).slice(0, 120) : v && typeof v === 'object' ? JSON.stringify(v).slice(0, 120) : v; return {id: r.id, ...o}; });
+    }
+    return J({types, samples});
+  }
   // Widget telefon: sambung / putus
   if(p === '/api/widget/connect' && m === 'POST'){
     const raw = crypto.getRandomValues(new Uint8Array(32)), tok = b64u(raw);
