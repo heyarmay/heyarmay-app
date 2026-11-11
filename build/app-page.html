@@ -392,7 +392,7 @@ const ui = {
 { const d = new Date(); ui.calMonth = new Date(d.getFullYear(), d.getMonth(), 1); }
 
 const NAV = [
-  [null, [['hari-ini','Today'],['tugasan','Tasks'],['kalendar','Calendar'],['team','Team Schedule'],['belanja','Expenses'],['berat','Weight'],['nota','Notes']]],
+  [null, [['hari-ini','Today'],['tugasan','Tasks'],['kalendar','Calendar'],['team','Team Schedule'],['belanja','Expenses'],['nafkah','Nafkah'],['berat','Weight'],['nota','Notes']]],
   ['Work', [['menunggu','Waiting For'],['bayaran','Payments'],['idea','Ideas']]],
   ['Time', [['peringatan','Reminders'],['tarikh','Expiry Dates']]],
   ['Life', [['bil','Bills'],['matlamat','Goals & Habits'],['perjalanan','Trips']]],
@@ -414,6 +414,12 @@ const EXP_CAT = [['makan','Food & drinks'],['transport','Fuel & transport'],['da
 const SCOPE = [['peribadi','Personal'],['bisnes','Business']];
 const METHOD = [['','Payment method'],['tunai','Cash'],['kad','Card'],['ewallet','e-Wallet'],['transfer','Bank transfer']];
 const ORG = 'ARMEDIA';
+const NAF_TYPE = [['bulanan','Monthly nafkah'],['tambahan','Extra'],['sekolah','School & education'],['kesihatan','Medical'],['pakaian','Clothing'],['lain','Other']];
+const NAF_METHOD = [['transfer','Bank transfer'],['tunai','Cash'],['ewallet','e-Wallet']];
+const NAF_COLORS = ['#14B8A6','#8B5CF6','#F59E0B','#EC4899'];
+const nafSet = () => items.find(i => i.kind==='nafkahset') || {people:['Cahaya','Najihah'], plan:{}};
+const nafPeople = () => { const s = nafSet(); return Array.isArray(s.people) && s.people.length ? s.people : ['Cahaya','Najihah']; };
+const nafColor = w => NAF_COLORS[Math.max(0, nafPeople().indexOf(w)) % NAF_COLORS.length];
 const S = {
   task:['Task',[['title','Title','text',1],['due','Due date','date'],['priority','Priority','sel',0,PRI],['notes','Notes','area',1]]],
   reminder:['Reminder',[['title','Remind me to','text',1],['at','Time','dt'],['repeat','Repeat','sel',0,REP]]],
@@ -432,10 +438,11 @@ const S = {
   contact:['Contact',[['name','Name','text'],['phone','Phone','tel'],['cat','Category','sel',0,CON_CAT],['label','Label / service type','text'],['notes','Notes','area',1]]],
   template:['Template',[['name','Template name','text',1],['body','Message','area',1]]],
   link:['Link',[['title','Name','text',1],['url','Address (https://…)','url',1],['group','Group','sel',0,LINK_G],['notes','Notes (do not store passwords)','area',1]]],
+  nafkah:['Nafkah',[['who','Given to','text'],['amount','Amount (RM)','num'],['date','Date','date'],['type','Type','sel',0,NAF_TYPE],['method','Method','sel',0,NAF_METHOD],['note','Note','text',1]]],
   weight:['Weight',[['kg','Weight (kg)','num'],['date','Date','date'],['note','Note','text',1]]],
   expense:['Expense',[['amount','Amount (RM)','num'],['date','Date','date'],['note','What for','text',1],['cat','Category','sel',0,EXP_CAT],['scope','Type','sel',0,SCOPE],['method','Payment method','sel',0,METHOD]]]
 };
-const nameOf = i => i.kind==='weight' ? `${Number(i.kg).toFixed(1)} kg` : (i.title || i.name || i.client || i.note || 'Untitled');
+const nameOf = i => i.kind==='nafkah' ? `Nafkah · ${i.who || ''} · ${money(i.amount)}` : i.kind==='weight' ? `${Number(i.kg).toFixed(1)} kg` : (i.title || i.name || i.client || i.note || 'Untitled');
 
 /* ---------- storage ---------- */
 function toast(msg, action){
@@ -902,6 +909,7 @@ function vToday(){
     <a class="dx-amt" href="#bayaran" data-view="bayaran"><b class="dx-big">${money(owedSum)}</b><span>${owed.length ? 'Unpaid by clients' : 'No outstanding client payments'}</span>
       ${owed.length ? `<span class="dx-flag ${late?'late':''}">${late ? DXI('alert') : ''}${owed.length} invoice${owed.length>1?'s':''}${late ? ` · ${late} overdue` : ' · Follow up'}</span>` : ''}</a>
     <a class="dx-line" href="#belanja" data-view="belanja">${DXI('wallet')}<span>Spent this month${bud.total ? ` <em class="${spPers>bud.total?'over':''}">${Math.round(spPers/bud.total*100)}% of budget</em>` : ''}</span><b>${money(spMonth)}</b>${DXI('chev')}</a>
+    ${(() => { const nm = byKind('nafkah').filter(x => String(x.date||'').slice(0,7) === ym()); return nm.length ? `<a class="dx-line" href="#nafkah" data-view="nafkah">${DXI('users')}<span>Nafkah this month <em>${nafPeople().map(w => esc(w) + ' ' + money(nm.filter(x => x.who===w).reduce((s,x)=>s+Number(x.amount||0),0))).join(' · ')}</em></span><b>${money(nm.reduce((s,x)=>s+Number(x.amount||0),0))}</b>${DXI('chev')}</a>` : ''; })()}
     ${bills.map(b => `<a class="dx-line" href="#bil" data-view="bil">${DXI('file')}<span>Bill ${esc(b.title)} <em>${esc(fmtD(billDueDay(b)))}</em></span><b>${money(b.amount)}</b>${DXI('chev')}</a>`).join('')}
   </div>`;
 
@@ -1739,6 +1747,68 @@ function weightChart(w){
       <g class="wcross" visibility="hidden"><line class="wx" y1="${T}" y2="${H - B}"/><circle class="wpt" r="6"/></g>
     </svg><div class="wtip" hidden></div></div>`;
 }
+/* ---------- Nafkah ---------- */
+function vNafkah(){
+  const t = today(), people = nafPeople(), set = nafSet(), plan = set.plan || {};
+  const N = ui.naf || (ui.naf = {month: ym(), who: people[0]});
+  if(!people.includes(N.who)) N.who = people[0];
+  const all = byKind('nafkah').filter(x => isYmd(x.date)).sort((a,b) => b.date.localeCompare(a.date) || (b.created||0) - (a.created||0));
+  const sum = l => l.reduce((s,x) => s + Number(x.amount||0), 0);
+  const m = N.month, mo = all.filter(x => x.date.slice(0,7) === m), yr = m.slice(0,4), yl = all.filter(x => x.date.slice(0,4) === yr);
+  const cards = people.map(w => {
+    const mt = sum(mo.filter(x => x.who===w)), tg = Number(plan[w]) || 0, last = all.find(x => x.who===w), pct = tg ? Math.min(100, Math.round(mt/tg*100)) : 0;
+    const st = tg ? (mt >= tg ? '<span class="chip task">Fulfilled ✓</span>' : `<span class="chip rem">${money(tg - mt)} to go</span>`) : '';
+    return `<div class="nf-card" style="--c:${nafColor(w)}">
+      <div class="nf-top"><span class="nf-dot"></span><b>${esc(w)}</b>${st}</div>
+      <div class="nf-amt">${money(mt)}</div>
+      <div class="nf-sub">${esc(monthLabel(m))}${tg ? ` · target ${money(tg)}` : ''}</div>
+      ${tg ? `<div class="nf-bar" role="img" aria-label="${pct}% of target"><i style="width:${pct}%"></i></div>` : ''}
+      <div class="nf-meta"><span>${esc(yr)}: <b>${money(sum(yl.filter(x => x.who===w)))}</b></span><span>Last: ${last ? esc(fmtD(last.date)) : '—'}</span></div>
+      <button type="button" class="btn sm" data-nfgive="${esc(w)}">Give to ${esc(w)}</button></div>`;
+  }).join('');
+  const lastMethodN = (() => { try { return localStorage.getItem('hy-nf-method') || 'transfer'; } catch(e){ return 'transfer'; } })();
+  const form = `<form id="f-naf" class="panel nf-form" autocomplete="off">
+    <div class="ph"><h3>Record nafkah</h3></div>
+    <div class="seg nf-who" role="radiogroup" aria-label="Given to">${people.map(w => `<label><input type="radio" name="nf-who" value="${esc(w)}" ${w===N.who?'checked':''}><span><i class="nf-dot" style="--c:${nafColor(w)}"></i>${esc(w)}</span></label>`).join('')}</div>
+    <div class="nf-grid">
+      <label class="lb">Amount (RM)<input class="f amtin" id="nf-amt" type="number" inputmode="decimal" step="0.01" min="0" placeholder="${Number(plan[N.who]) ? Number(plan[N.who]).toFixed(2) : '0.00'}" required></label>
+      <label class="lb">Date<input class="f" id="nf-date" type="date" value="${t}" max="${t}"></label>
+      <label class="lb">Type<select class="f" id="nf-type">${NAF_TYPE.map(([k,l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
+      <label class="lb">Method<select class="f" id="nf-method">${NAF_METHOD.map(([k,l]) => `<option value="${k}" ${k===lastMethodN?'selected':''}>${l}</option>`).join('')}</select></label>
+      <label class="lb full">Note (optional)<input class="f" id="nf-note" placeholder="e.g. November allowance, school fees"></label>
+    </div>
+    <div class="nf-acts"><label class="btn"><input type="file" id="nf-proof" accept="image/*" hidden><span id="nf-proof-l">📷 Proof (optional)</span></label><button class="btn pri" type="submit">Record nafkah</button></div>
+  </form>`;
+  // 12-month chart ending at selected month
+  const months = []; { let [y, mm] = m.split('-').map(Number); for(let i = 0; i < 12; i++){ months.unshift(`${y}-${pad(mm)}`); mm--; if(!mm){ mm = 12; y--; } } }
+  const vals = months.map(k => people.map(w => sum(all.filter(x => x.who===w && x.date.slice(0,7)===k))));
+  const vwN = (document.getElementById('view') || {}).clientWidth || 640;
+  const mx = Math.max(1, ...vals.flat()), W = Math.round(Math.max(320, Math.min(900, vwN - 60))), H = W < 520 ? 170 : 190, L = 44, B = 24, T = 10, gw = (W - L - 6) / 12, bw = Math.min(16, (gw - 8) / people.length);
+  const nice = (() => { const s = mx / 3, p10 = Math.pow(10, Math.floor(Math.log10(s))); const n = [1,2,2.5,5,10].find(k => k*p10 >= s) * p10; return n; })();
+  const top = nice * 3, Y = v => T + (H - T - B) * (1 - v / top);
+  const chart = all.length ? `<div class="nf-chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Nafkah per month, last 12 months">
+      ${[0,1,2,3].map(i => `<line x1="${L}" x2="${W}" y1="${Y(nice*i).toFixed(1)}" y2="${Y(nice*i).toFixed(1)}" class="wgrid"/><text x="${L-6}" y="${(Y(nice*i)+4).toFixed(1)}" text-anchor="end" class="wtick">${nice*i >= 1000 ? (nice*i/1000) + 'k' : nice*i}</text>`).join('')}
+      ${months.map((k, gi) => `<g data-nfm="${k}" class="nf-g ${k===m?'on':''}"><rect x="${(L + gi*gw).toFixed(1)}" y="${T}" width="${gw.toFixed(1)}" height="${H-T-B}" class="nf-hit"/>
+        ${people.map((w, pi) => { const v = vals[gi][pi], x = L + gi*gw + (gw - bw*people.length - 2*(people.length-1))/2 + pi*(bw+2); return v > 0 ? `<rect x="${x.toFixed(1)}" y="${Y(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(H-B-Y(v)).toFixed(1)}" rx="3" fill="${nafColor(w)}"><title>${esc(w)} · ${esc(monthLabel(k))}: ${money(v)}</title></rect>` : ''; }).join('')}
+        <text x="${(L + gi*gw + gw/2).toFixed(1)}" y="${H-6}" text-anchor="middle" class="wtick">${BLS[Number(k.slice(5))-1]}</text></g>`).join('')}
+    </svg><div class="nf-legend">${people.map(w => `<span><i class="nf-dot" style="--c:${nafColor(w)}"></i>${esc(w)}</span>`).join('')}</div></div>` : '';
+  const TYPE_L = Object.fromEntries(NAF_TYPE), MET_L = Object.fromEntries(NAF_METHOD);
+  const hist = mo.length ? mo.map(x => `<div class="row" data-open="${x.id}"><span class="time">${esc(fmtD(x.date))}</span><div class="rt"><span class="t"><i class="nf-dot" style="--c:${nafColor(x.who)}"></i>${esc(x.who)}</span>
+      <span class="meta"><span class="chip">${esc(TYPE_L[x.type] || 'Nafkah')}</span><span>${esc(MET_L[x.method] || '')}</span>${x.note ? `<span>${esc(x.note)}</span>` : ''}${x.imgId ? '<span>📷 proof</span>' : ''}</span></div><span class="amt">${money(x.amount)}</span></div>`).join('')
+    + `<div class="nf-total"><span>Total ${esc(monthLabel(m))}</span><b>${money(sum(mo))}</b></div>` : empty(`No nafkah recorded in ${monthLabel(m)}.`);
+  const settings = `<details class="panel nf-set"><summary>Monthly target & names</summary>
+    <div class="nf-grid">${people.map((w, i) => `<label class="lb">Name ${i+1}<input class="f" data-nfname="${i}" value="${esc(w)}"></label><label class="lb">Monthly target (RM)<input class="f" data-nftarget="${i}" type="number" inputmode="decimal" step="1" min="0" value="${Number(plan[w]) || ''}" placeholder="optional"></label>`).join('')}</div>
+    <div class="nf-acts"><span class="small muted">The target shows a progress bar and how much is left each month.</span><button type="button" class="btn pri sm" data-act="nf-save-set">Save</button></div></details>`;
+  return `<div class="stack">
+    <div class="head"><div><h1>Nafkah</h1><p>Money you give to ${people.map(esc).join(' and ')}, month by month.</p></div></div>
+    <div class="nf-cards">${cards}</div>
+    ${form}
+    <div class="panel"><div class="ph"><h3>Last 12 months</h3><div class="inline"><button class="btn sm" data-nfmon="-1" aria-label="Previous month">‹</button><span class="small" style="min-width:120px;text-align:center">${esc(monthLabel(m))}</span><button class="btn sm" data-nfmon="1" aria-label="Next month" ${m >= ym() ? 'disabled' : ''}>›</button></div></div>
+      ${chart}<div class="list">${hist}</div></div>
+    ${settings}
+  </div>`;
+}
+
 function vWeight(){
   const st = weightStats(byKind('weight').filter(x => isYmd(x.date) && Number(x.kg) > 0));
   const t = today();
@@ -2142,7 +2212,7 @@ function vReview(){
     </div></div>`;
 }
 
-const RENDER = {'berat':vWeight,'team':vTeam,'hari-ini':vToday,'belanja':vExpenses,'tugasan':vTasks,'menunggu':vWaiting,'bayaran':vPayments,'idea':vIdeas,'peringatan':vReminders,'kalendar':vCalendar,'tarikh':vRenewals,
+const RENDER = {'nafkah':vNafkah,'berat':vWeight,'team':vTeam,'hari-ini':vToday,'belanja':vExpenses,'tugasan':vTasks,'menunggu':vWaiting,'bayaran':vPayments,'idea':vIdeas,'peringatan':vReminders,'kalendar':vCalendar,'tarikh':vRenewals,
   'matlamat':vGoals,'bil':vBills,'perjalanan':vTrips,'orang':vPeople,'mesej':vMessages,'emel':vEmail,'nota':vNotes,'pautan':vLinks,'semakan':vReview};
 function render(){
   renderSide();
@@ -2210,7 +2280,7 @@ function gcalLink(i){
   } else dates = `${d}/${addDays(i.date,1).replace(/-/g,'')}`;
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(i.title||'')}&dates=${dates}&ctz=Asia/Kuala_Lumpur&location=${encodeURIComponent(i.place||'')}&details=${encodeURIComponent(i.notes||'')}`;
 }
-const KCHIP = {weight:'ev', task:'task', reminder:'rem', event:'ev', waiting:'ev', renewal:'late', idea:'plum', payment:'rem', bill:'rem', expense:'', note:'', gift:'plum', person:'plum'};
+const KCHIP = {nafkah:'plum', weight:'ev', task:'task', reminder:'rem', event:'ev', waiting:'ev', renewal:'late', idea:'plum', payment:'rem', bill:'rem', expense:'', note:'', gift:'plum', person:'plum'};
 function fmtField([k, l, type, , opts], v){
   if(v === null || v === undefined || v === '' || v === false) return '';
   if(type==='date') return isYmd(v) ? esc(fmtD(v)) : esc(v);
@@ -2282,7 +2352,7 @@ function micToggle(){
 }
 
 /* ---------- cakap & susun ---------- */
-const VKIND = {renewal:['Expiry date','late'], task:['Task','task'], reminder:['Reminder','rem'], event:['Event','ev'], waiting:['Waiting for','ev'], idea:['Idea','plum'], expense:['Expense',''], note:['Note','']};
+const VKIND = {nafkah:['Nafkah','plum'], renewal:['Expiry date','late'], task:['Task','task'], reminder:['Reminder','rem'], event:['Event','ev'], waiting:['Waiting for','ev'], idea:['Idea','plum'], expense:['Expense',''], note:['Note','']};
 function voiceWhen(a){
   if(a.kind==='event') return fmtD(a.date) + (a.start ? ' ' + fmtT(a.start) : '');
   if(a.kind==='reminder') return fmtD(a.at.slice(0,10)) + ' ' + fmtT(a.at.slice(11));
@@ -2290,6 +2360,7 @@ function voiceWhen(a){
   if(a.kind==='waiting') return [a.who, a.expect ? 'expected ' + fmtD(a.expect) : ''].filter(Boolean).join(' · ');
   if(a.kind==='expense') return money(a.amount) + ' · ' + catName(a.cat) + (a.scope==='bisnes' ? ' · business' : '');
   if(a.kind==='renewal') return 'expires ' + fmtD(a.date);
+  if(a.kind==='nafkah') return money(a.amount) + ' · ' + a.who + (a.date !== today() ? ' · ' + fmtD(a.date) : '');
   return '';
 }
 function renderVoice(){
@@ -2365,6 +2436,7 @@ Task:
 - "reminder": the user asks to be reminded at a set time. title, at (YYYY-MM-DDTHH:MM), repeat ("tiada"|"harian"|"mingguan")
 - "event": appointment, meeting, meeting someone. title, date (YYYY-MM-DD), start (HH:MM or ""), end (HH:MM or ""), place
 - "waiting": someone else has to send or finish something. title, who, expect (YYYY-MM-DD or "")
+- "nafkah": money the user GIVES as nafkah (maintenance/allowance) to ${nafPeople().join(" or ")} (e.g. "bagi nafkah Cahaya 500", "transfer Najihah 200 duit sekolah"). who (${nafPeople().join("|")}), amount (RM number), date (YYYY-MM-DD), type ("bulanan" monthly|"tambahan" extra|"sekolah" school|"kesihatan" medical|"pakaian" clothing|"lain"), method ("transfer"|"tunai"|"ewallet"), note. Money given to these people is ALWAYS "nafkah", never "expense".
 - "expense": money already spent. amount (RM number), note, cat (${EXP_CAT.map(c => c[0]).join('|')}), scope ("bisnes" if for work/company/client/shoot, otherwise "peribadi"), date (YYYY-MM-DD)
 - "idea": video, business, client or package idea. title, tag ("video"|"klien"|"pakej"|"lain"), body
 - "renewal": something with an EXPIRY date that needs renewing (road tax, insurance, driving licence, passport, IC, domain, hosting, subscription, certificate, permit, rental). title (e.g. "Road tax & insurance VQV355"), date (expiry date YYYY-MM-DD), category ("kenderaan"|"dokumen"|"domain"|"insurans"|"langganan"|"lain"), cost (RM number or null), notes (short details: start date, insurer, policy no.)
@@ -2458,10 +2530,12 @@ function cleanItem(r, fallback){
   if(k==='waiting') return {kind:'waiting', title:T, who:String(r.who||''), since:today(), expect:isYmd(r.expect)?r.expect:'', done:false};
   if(k==='renewal' && isYmd(r.date)) return {kind:'renewal', title:T, date:r.date, category:REN_CAT.some(c => c[0]===r.category)?r.category:'lain', cost:numOrNull(r.cost), notes:String(r.notes||'').slice(0,500)};
   if(k==='idea') return {kind:'idea', title:T, tag:['video','klien','pakej'].includes(r.tag)?r.tag:'lain', status:'baru', body:String(r.body||'')};
+  if(k==='nafkah' && Number(r.amount) > 0){ const who = nafPeople().find(x => x.toLowerCase() === String(r.who||'').trim().toLowerCase()) || String(r.who||'').trim() || nafPeople()[0];
+    return {kind:'nafkah', who, amount:Math.round(Number(r.amount)*100)/100, date:isYmd(r.date) && r.date<=today() ? r.date : today(), type:NAF_TYPE.some(c => c[0]===r.type)?r.type:'bulanan', method:NAF_METHOD.some(c => c[0]===r.method)?r.method:'transfer', note:String(r.note||'').slice(0,120)}; }
   if(k==='expense' && Number(r.amount) > 0) return {kind:'expense', amount:Math.round(Number(r.amount)*100)/100, note:String(r.note||r.title||fallback).slice(0,120), cat:EXP_CAT.some(c => c[0]===r.cat)?r.cat:'lain', scope:r.scope==='bisnes'?'bisnes':'peribadi', date:isYmd(r.date) && r.date<=today() ? r.date : today(), method:''};
   return null;
 }
-const KIND_L = {renewal:'Expiry date', task:'Task', reminder:'Reminder', event:'Event', note:'Note', waiting:'Waiting for', idea:'Idea', expense:'Expense'};
+const KIND_L = {nafkah:'Nafkah', renewal:'Expiry date', task:'Task', reminder:'Reminder', event:'Event', note:'Note', waiting:'Waiting for', idea:'Idea', expense:'Expense'};
 async function capture(text, kind){
   if(kind==='auto' && sample){
     $('#cap-btn').disabled = true; $('#cap-btn').textContent = 'Sorting…';
@@ -2475,6 +2549,7 @@ Types:
 - "event": appointment, meeting, meeting someone, an event. Fields: title, date (YYYY-MM-DD), start (HH:MM or ""), end (HH:MM or ""), place
 - "waiting": the user is waiting for something from someone else ("tunggu", "X has to send", "X promised to finish"). Fields: title, who, expect (YYYY-MM-DD or "")
 - "idea": video idea, business idea, target client or sales package. Fields: title, tag ("video"|"klien"|"pakej"|"lain"), body
+- "nafkah": money the user gives as nafkah to ${nafPeople().join(" or ")} (e.g. "nafkah Cahaya 500", "bagi Najihah 100 belanja sekolah"). Fields: who (${nafPeople().join("|")}), amount (number), date (YYYY-MM-DD, default today), type ("bulanan"|"tambahan"|"sekolah"|"kesihatan"|"pakaian"|"lain"), method ("transfer"|"tunai"|"ewallet"), note. Money given to these people is ALWAYS "nafkah", never "expense".
 - "expense": money already spent, with an RM amount (e.g. "lunch 15", "isi minyak rm50", "groceries yesterday 120"). Fields: amount (number), note (what for, short), cat (${EXP_CAT.map(c => c[0]).join('|')}), scope ("bisnes" if for work/company/FuyohhTV/client/shoot, otherwise "peribadi"), date (YYYY-MM-DD, default today)
 - "renewal": has an expiry date and needs renewing (road tax, insurance, licence, passport, domain, subscription). Fields: title, date (expiry date YYYY-MM-DD), category ("kenderaan"|"dokumen"|"domain"|"insurans"|"langganan"|"lain"), cost (number or null), notes
 - "note": other information or notes. Fields: title (short), body (full text)
@@ -2484,7 +2559,7 @@ Input: ${text}`, {modelTier:'quick', cache:false});
       const data = cleanItem(r, text) || {kind:'note', title:String(r&&r.title||text).slice(0,80), body:String(r&&r.body||text), pinned:false, updated:Date.now()};
       const id = await addItem(data);
       if(id){
-        const when = data.kind==='expense' ? ` · ${money(data.amount)} · ${catName(data.cat)}${data.scope==='bisnes'?' · business':''}` : data.kind==='event' ? ` · ${fmtD(data.date)}${data.start?' '+fmtT(data.start):''}` : data.kind==='reminder' ? ` · ${fmtD(data.at.slice(0,10))} ${fmtT(data.at.slice(11))}` : data.due ? ` · ${fmtD(data.due)}` : data.who ? ` · ${data.who}` : '';
+        const when = data.kind==='nafkah' ? ` · ${money(data.amount)} · ${data.who}` : data.kind==='expense' ? ` · ${money(data.amount)} · ${catName(data.cat)}${data.scope==='bisnes'?' · business':''}` : data.kind==='event' ? ` · ${fmtD(data.date)}${data.start?' '+fmtT(data.start):''}` : data.kind==='reminder' ? ` · ${fmtD(data.at.slice(0,10))} ${fmtT(data.at.slice(11))}` : data.due ? ` · ${fmtD(data.due)}` : data.who ? ` · ${data.who}` : '';
         toast(`${KIND_L[data.kind]} added${when}`, {label:'Edit', fn:() => openEditor({id, ...data}, true)});
       }
       return true;
@@ -2684,6 +2759,9 @@ document.addEventListener('click', async ev => {
     if(n===0){ const d = new Date(); ui.teamMonth = new Date(d.getFullYear(), d.getMonth(), 1); ui.teamSel = today(); }
     else ui.teamMonth = new Date(m.getFullYear(), m.getMonth()+n, 1);
     render(); loadTeam(); return; }
+  if((el = pick('data-nfgive'))){ ui.naf.who = el.dataset.nfgive; render(); setTimeout(() => { const a = $('#nf-amt'); if(a){ a.scrollIntoView({block:'center', behavior:'smooth'}); a.focus({preventScroll:true}); } }, 50); return; }
+  if((el = pick('data-nfm'))){ ui.naf.month = el.dataset.nfm; render(); return; }
+  if((el = pick('data-nfmon'))){ let [y, mm] = ui.naf.month.split('-').map(Number); mm += Number(el.dataset.nfmon); if(mm < 1){ mm = 12; y--; } if(mm > 12){ mm = 1; y++; } const nm = `${y}-${pad(mm)}`; if(nm <= ym()){ ui.naf.month = nm; render(); } return; }
   if((el = pick('data-wrange'))){ ui.wRange = el.dataset.wrange; render(); return; }
   if((el = pick('data-tday'))){ ui.teamSel = el.dataset.tday; render(); return; }
   if((el = pick('data-cal'))){ const n = Number(el.dataset.cal), m = ui.calMonth;
@@ -2717,6 +2795,14 @@ document.addEventListener('click', async ev => {
     const ex = [...items, ...exps].filter(i => i.example).map(i => i.id);
     for(const id of ex) await delItem(id);
     toast('Sample items deleted');
+  }
+  if(k==='nf-save-set'){
+    const old = nafPeople(), names = old.map((w, i) => { const e = document.querySelector(`[data-nfname="${i}"]`); return (e && e.value.trim()) || w; });
+    const plan = {}; names.forEach((w, i) => { const e = document.querySelector(`[data-nftarget="${i}"]`); const n = e ? Number(e.value) : 0; if(n > 0) plan[w] = Math.round(n*100)/100; });
+    const s = items.find(i => i.kind==='nafkahset');
+    if(s) await updItem(s.id, {people: names, plan}); else await addItem({kind:'nafkahset', people: names, plan});
+    for(let i = 0; i < old.length; i++) if(names[i] !== old[i]) for(const x of byKind('nafkah').filter(x => x.who === old[i])) await updItem(x.id, {who: names[i]});
+    toast('Saved'); render(); return;
   }
   if(k==='push-on'){ pushOn(); return; }
   if(k==='push-hide'){ ui.pushHide = true; try { localStorage.setItem('hy-push-hide', '1'); } catch(e){} render(); return; }
@@ -2788,6 +2874,7 @@ document.addEventListener('change', ev => {
   if(T.id==='ml-tone') ui.mail.tone = T.value;
   if(T.matches('[data-goal]')) updItem(T.dataset.goal, {progress:Number(T.value)});
   if(T.id==='ex-file' && T.files && T.files[0]) scanReceipt(T.files[0]);
+  if(T.id==='nf-proof'){ const l = $('#nf-proof-l'); if(l) l.textContent = T.files && T.files[0] ? '📷 Proof attached ✓' : '📷 Proof (optional)'; }
   if((T.id==='pic-file' || T.id==='pic-file2') && T.files && T.files.length){ const fs = Array.from(T.files); T.value = ''; openPic(fs); }
 });
 document.addEventListener('submit', async ev => {
@@ -2806,6 +2893,22 @@ document.addEventListener('submit', async ev => {
   if(F.classList.contains('trip-add')){ const tr = get(F.dataset.trip); const x = F.elements.t.value.trim(); if(!tr || !x) return;
     await updItem(tr.id, {list:[...(tr.list||[]), {g:'Other', t:x, done:false}]}); return; }
   const add = async (data, msg) => { F.reset(); if(await addItem(data)) toast(msg); };
+  if(f==='f-naf'){
+    const amount = num('nf-amt');
+    if(!(amount > 0)){ toast('Enter an amount.'); return; }
+    const who = (document.querySelector('input[name=nf-who]:checked') || {}).value || nafPeople()[0];
+    const method = v('nf-method');
+    const data = {kind:'nafkah', who, amount:Math.round(amount*100)/100, date:isYmd(v('nf-date')) ? v('nf-date') : t, type:v('nf-type'), method, note:v('nf-note')};
+    const fileEl = document.getElementById('nf-proof'), file = fileEl && fileEl.files && fileEl.files[0];
+    F.reset(); const pl = $('#nf-proof-l'); if(pl) pl.textContent = '📷 Proof (optional)';
+    const wr = document.querySelector(`input[name=nf-who][value="${who}"]`); if(wr) wr.checked = true; const mt = $('#nf-method'); if(mt) mt.value = method;
+    if(file && assets){ try { const b = await shrinkImage(file); const up = await assets.upload(b, {type: b.type==='image/png' ? 'image/png' : 'image/jpeg'}); data.imgId = up.id; } catch(e){ toast("The proof photo couldn't be saved. The record was still saved."); } }
+    try { localStorage.setItem('hy-nf-method', method); } catch(e){}
+    ui.naf.who = who;
+    if(await addItem(data)) toast(`${money(data.amount)} nafkah to ${who} recorded`);
+    render();
+    return;
+  }
   if(f==='f-rec'){
     const amount = num('rec-amt');
     if(!(amount > 0)){ toast('Enter an amount.'); return; }
