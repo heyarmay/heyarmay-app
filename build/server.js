@@ -298,18 +298,23 @@ async function makeDigest(env, kind){
 
 /* ---------------- ARMEDIA (baca sahaja dari armedia-db melalui binding ARMEDIA_DB) ---------------- */
 // Hanya SELECT. Data pengguna ARMEDIA dibaca setakat id + nama sahaja.
+const ARM_ME = '0dfb85a139001ea8';
+const agKind = k => { k = String(k || '').toLowerCase(); return /meet|mesyuarat|perjumpaan/.test(k) ? 'meeting' : /task|tugas/.test(k) ? 'task' : /remind|peringatan|ingat/.test(k) ? 'reminder' : 'agenda'; };
+const AG_EMOJI = {meeting: '👥', task: '✅', reminder: '⏰', agenda: '📌'};
 async function armediaFeed(env, from, to){
   const db = env.ARMEDIA_DB;
   if(!db) return {connected: false};
   const back = addDays(from, -30);
-  const [jr, ur, lr] = await Promise.all([
+  const [jr, ur, lr, ar] = await Promise.all([
     db.prepare(`SELECT id, data FROM records WHERE type = 'job' AND (
         json_extract(data, '$.shoot_date') BETWEEN ?1 AND ?2
         OR (substr(IFNULL(json_extract(data, '$.deadline'), ''), 1, 10) BETWEEN ?3 AND ?2 AND IFNULL(json_extract(data, '$.status'), '') <> 'Dipost'))`).bind(from, to, back).all(),
     db.prepare(`SELECT id, json_extract(data, '$.name') AS name FROM records WHERE type = 'user'`).all(),
     db.prepare(`SELECT json_extract(data, '$.staff_id') AS sid, json_extract(data, '$.from') AS f, json_extract(data, '$.to') AS t,
         json_extract(data, '$.type') AS ty, json_extract(data, '$.half_day') AS h FROM records
-        WHERE type = 'leave' AND json_extract(data, '$.status') = 'Lulus' AND json_extract(data, '$.from') <= ?2 AND json_extract(data, '$.to') >= ?1`).bind(from, to).all()
+        WHERE type = 'leave' AND json_extract(data, '$.status') = 'Lulus' AND json_extract(data, '$.from') <= ?2 AND json_extract(data, '$.to') >= ?1`).bind(from, to).all(),
+    db.prepare(`SELECT id, data FROM records WHERE type = 'agenda' AND (json_extract(data, '$.date') BETWEEN ?1 AND ?2
+        OR (IFNULL(json_extract(data, '$.done'), 0) = 0 AND json_extract(data, '$.date') BETWEEN ?3 AND ?1))`).bind(from, to, back).all()
   ]);
   const names = new Map((ur.results || []).map(u => [u.id, u.name || '']));
   const nm = id => names.get(id) || '';
@@ -327,8 +332,21 @@ async function armediaFeed(env, from, to){
       channels: chs.map(c => ({ch: str(c.ch), editor: nm(c.editor_id)}))
     });
   }
+  const me = (await getMeta(env, 'armedia_me')) || ARM_ME;
+  const agenda = [];
+  for(const r of ar.results || []){
+    let a; try { a = JSON.parse(r.data); } catch(e){ continue; }
+    if(!a || a.deleted || a.archived || !isYmd(a.date)) continue;
+    const ppl = Array.isArray(a.people) ? a.people : [];
+    if(!(a.created_by_id === me || ppl.includes(me) || !ppl.length)) continue;
+    const k = String(a.kind || '');
+    agenda.push({id: r.id, kind: agKind(k), label: str(k) || 'Agenda', title: str(a.title) || 'Agenda', date: a.date, start: /^\d{2}:\d{2}$/.test(a.start || '') ? a.start : '',
+      end: /^\d{2}:\d{2}$/.test(a.end || '') ? a.end : '', place: str(a.place), notes: str(a.notes).slice(0, 200), done: !!a.done, link: /^https?:\/\//.test(a.link || '') ? str(a.link) : '',
+      people: ppl.map(nm).filter(Boolean).slice(0, 8)});
+  }
+  agenda.sort((x, y) => (x.date + (x.start || '99')).localeCompare(y.date + (y.start || '99')));
   const leaves = (lr.results || []).map(l => ({name: nm(l.sid), from: str(l.f), to: str(l.t), type: str(l.ty), half: !!l.h})).filter(l => l.name);
-  return {connected: true, from, to, jobs, leaves, at: Date.now()};
+  return {connected: true, from, to, jobs, leaves, agenda, at: Date.now()};
 }
 function teamLines(feed, t){
   if(!feed || !feed.connected) return [];
@@ -337,6 +355,7 @@ function teamLines(feed, t){
     if(seen.has(j.shoot)) return; seen.add(j.shoot); titles.push((j.time ? j.time + ' ' : '') + j.title);
   });
   L.push(titles.length ? `Team jobs today (${titles.length}): ${titles.join('; ')}` : 'No team jobs today');
+  (feed.agenda || []).filter(a => !a.done && (a.date === t || (a.kind === 'task' && a.date < t))).forEach(a => L.push(`ARMEDIA ${a.label}${a.date < t ? ' (OVERDUE since ' + a.date + ')' : ''}${a.start ? ' ' + a.start : ''}: ${a.title}${a.place ? ' @ ' + a.place : ''}`));
   const CHECK = ['Tunggu approval client', 'Sedia untuk post'];
   const late = feed.jobs.filter(j => j.deadline && j.status !== 'Dipost' && !CHECK.includes(j.status) && j.deadline.slice(0, 10) < t);
   if(late.length) L.push(`Team videos past deadline: ${late.length} (check in armedia.my)`);
@@ -419,6 +438,7 @@ async function morningMessage(env){
   if(env.ARMEDIA_DB){
     try { const f = await armediaFeed(env, t, t), seen = new Set();
       f.jobs.filter(j => j.date === t).forEach(j => { if(seen.has(j.shoot)) return; seen.add(j.shoot); agenda.push([j.time || '', '🎬 ' + (j.title || 'Team job')]); });
+      (f.agenda || []).filter(a => a.date === t && !a.done).forEach(a => agenda.push([a.start || '', (AG_EMOJI[a.kind] || '📌') + ' ' + a.title + (a.place ? ' @ ' + a.place : '')]));
     } catch(e){}
   }
   agenda.sort((a, b) => (a[0] || '99').localeCompare(b[0] || '99'));
@@ -494,6 +514,7 @@ async function widgetData(env){
     if(env.ARMEDIA_DB){
       try { const f = await armediaFeed(env, day, day), seen = new Set();
         f.jobs.filter(j => j.date === day).forEach(j => { if(seen.has(j.shoot)) return; seen.add(j.shoot); team++; a.push({time: j.time || '', title: j.title || 'Team job', sub: 'ARMEDIA team' + (j.location ? ' · ' + j.location : '')}); });
+        (f.agenda || []).filter(x => x.date === day && !x.done).forEach(x => a.push({time: x.start || '', title: x.title, sub: 'ARMEDIA ' + x.label + (x.place ? ' · ' + x.place : '')}));
       } catch(e){}
     }
     a.sort((x, y) => (x.time || '99').localeCompare(y.time || '99'));
@@ -849,18 +870,6 @@ async function handle(req, env, ctx){
   if(p === '/HeyArmayWidget.apk' && m === 'GET'){
     const bin = Uint8Array.from(atob(WIDGET_APK), c => c.charCodeAt(0));
     return new Response(bin, {headers: {'content-type': 'application/vnd.android.package-archive', 'content-disposition': 'attachment; filename="HeyArmayWidget.apk"', 'cache-control': 'no-store'}});
-  }
-  // SEMENTARA: tinjau struktur armedia (baca sahaja)
-  if(p === '/api/armedia/inspect' && m === 'GET' && env.ARMEDIA_DB){
-    const db = env.ARMEDIA_DB;
-    const types = (await db.prepare('SELECT type, COUNT(*) AS n, MAX(updated_at) AS u FROM records GROUP BY type ORDER BY n DESC').all()).results || [];
-    const want = (url.searchParams.get('types') || '').split(',').filter(Boolean).slice(0, 8);
-    const samples = {};
-    for(const ty of want){
-      const rows = (await db.prepare('SELECT id, data, created_at, updated_at FROM records WHERE type = ? ORDER BY updated_at DESC LIMIT 3').bind(ty).all()).results || [];
-      samples[ty] = rows.map(r => { let d = {}; try { d = JSON.parse(r.data); } catch(e){} const o = {}; for(const [k, v] of Object.entries(d)) o[k] = typeof v === 'string' ? v.slice(0, 80) : Array.isArray(v) ? '[' + v.length + ']' + JSON.stringify(v).slice(0, 120) : v && typeof v === 'object' ? JSON.stringify(v).slice(0, 120) : v; return {id: r.id, ...o}; });
-    }
-    return J({types, samples});
   }
   // Widget telefon: sambung / putus
   if(p === '/api/widget/connect' && m === 'POST'){

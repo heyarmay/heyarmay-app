@@ -769,3 +769,13 @@ label.btn{cursor:pointer}
   .nf-who span{justify-content:center}
   .nf-acts .btn.pri{flex:1}
 }
+
+/* ARMEDIA agenda (meeting/task/reminder) */
+.cal .d .ev.g{background:rgba(236,72,153,.13);color:#BE185D}
+:root[data-hy="dark"] .cal .d .ev.g{background:rgba(244,114,182,.16);color:#F9A8D4}
+.cal .d .ev.g.done{opacity:.55;text-decoration:line-through}
+.cal .dots i.g{background:#EC4899}
+.chip.arm{background:rgba(236,72,153,.12);color:#BE185D}
+:root[data-hy="dark"] .chip.arm{background:rgba(244,114,182,.16);color:#F9A8D4}
+.row.ag{text-decoration:none;color:inherit}
+.row.ag .ext{color:var(--muted);font-size:.9rem;padding-left:8px}

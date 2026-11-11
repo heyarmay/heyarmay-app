@@ -858,7 +858,8 @@ function vToday(){
   const agenda = [
     ...ev.map(i => ({s:i.start||'', title:i.title, sub:i.place||'Event', open:i.id})),
     ...rm.map(i => ({s:(i.at||'').slice(11,16), title:i.title, sub:'Reminder', open:i.id})),
-    ...shoots.map(g => ({s:g.time||'', title:g.title||'Job', sub:'ARMEDIA team' + (g.location ? ' · ' + g.location : ''), href:`${ARM_URL}#/schedule?d=${g.date}`}))
+    ...shoots.map(g => ({s:g.time||'', title:g.title||'Job', sub:'ARMEDIA team' + (g.location ? ' · ' + g.location : ''), href:`${ARM_URL}#/schedule?d=${g.date}`})),
+    ...(team.connected ? armAg(t).filter(a => !a.done) : []).map(a => ({s:a.start||'', title:(AG_I[a.kind]||'📌') + ' ' + a.title, sub:'ARMEDIA ' + (AG_L[a.kind]||a.label) + (a.place ? ' · ' + a.place : ''), href:a.link || ARM_URL}))
   ].sort((a,b)=>(a.s||'99').localeCompare(b.s||'99'));
   const upcoming = agenda.filter(a => !a.s || a.s >= nowHM);
   let nx = upcoming[0], nxDay = '';
@@ -897,7 +898,7 @@ function vToday(){
   const focus = `<div class="dx-card">${dxHead('target', "Today's focus", tk.length > 4 ? dxMore('tugasan', `+${tk.length - 4} more`) : '')}
     ${tk.length ? `<div class="dx-list">${tk.slice(0,4).map(i => dxTask(i, t)).join('')}</div>` : '<div class="dx-empty">No urgent tasks today.</div>'}</div>`;
 
-  const attn = [...missed.sort(byAt).map(rowRem), ...chase.map(rowWait), ...callP.slice(0,3).map(rowPerson)];
+  const attn = [...(team.connected ? armLate() : []).map(rowAg), ...missed.sort(byAt).map(rowRem), ...chase.map(rowWait), ...callP.slice(0,3).map(rowPerson)];
   const attnHtml = attn.length ? `<div class="dx-card">${dxHead('bell', 'Needs attention')}<div class="list">${attn.join('')}</div></div>` : '';
   const habitHtml = habits.length ? `<div class="dx-card">${dxHead('checksq', "Today's habits", dxMore('matlamat', 'All'))}<div class="hchips">${habits.map(h=>`<button class="hchip ${h.log&&h.log[t]?'on':''}" data-habit="${h.id}">${esc(h.title)}</button>`).join('')}</div></div>` : '';
 
@@ -1584,7 +1585,7 @@ function vReminders(){
 }
 
 /* ---------- Jadual team ARMEDIA (baca sahaja dari armedia.my) ---------- */
-let team = {connected:null, jobs:[], leaves:[], from:'', to:'', at:0, busy:false};
+let team = {connected:null, jobs:[], leaves:[], agenda:[], from:'', to:'', at:0, busy:false};
 function teamRange(){
   const ms = [ui.calMonth, ui.teamMonth || ui.calMonth];
   const a0 = ms.map(m => ymd(new Date(m.getFullYear(), m.getMonth(), 1))).sort()[0];
@@ -1601,12 +1602,23 @@ async function loadTeam(force){
     const r = await fetch(`/api/armedia?from=${from}&to=${to}`, {credentials:'same-origin', cache:'no-store'});
     if(r.status === 401){ location.reload(); return; }
     const d = await r.json();
-    team = {connected: !!d.connected, jobs: d.jobs || [], leaves: d.leaves || [], from, to, at: Date.now(), busy:false, err: d.error || null};
+    team = {connected: !!d.connected, jobs: d.jobs || [], leaves: d.leaves || [], agenda: d.agenda || [], from, to, at: Date.now(), busy:false, err: d.error || null};
   } catch(e){ team.busy = false; team.err = 'net'; }
   team.busy = false;
   render();
 }
 // Satu shooting boleh dipecah kepada beberapa job (satu bagi setiap channel); gabungkan ikut "shoot".
+/* Agenda armedia.my (meeting, task, reminder) */
+const AG_L = {meeting:'Meeting', task:'Task', reminder:'Reminder', agenda:'Agenda'};
+const AG_I = {meeting:'👥', task:'✅', reminder:'⏰', agenda:'📌'};
+const armAg = day => (team.agenda || []).filter(a => a.date === day).sort((x, y) => (x.start || '99').localeCompare(y.start || '99'));
+const armLate = () => (team.agenda || []).filter(a => a.kind === 'task' && !a.done && a.date < today());
+function rowAg(a){
+  const t = today(), late = a.kind === 'task' && !a.done && a.date < t;
+  return `<a class="row ag" href="${esc(a.link || ARM_URL)}" target="_blank" rel="noopener"><span class="time">${a.start ? esc(fmtT(a.start)) : a.date !== t ? esc(fmtD(a.date)) : 'All day'}</span>
+    <div class="rt"><span class="t">${AG_I[a.kind] || '📌'} ${esc(a.title)}</span>
+    <span class="meta"><span class="chip arm">ARMEDIA · ${esc(AG_L[a.kind] || a.label)}</span>${a.end ? `<span>until ${esc(fmtT(a.end))}</span>` : ''}${a.place ? `<span>${esc(a.place)}</span>` : ''}${a.done ? '<span class="chip task">done</span>' : late ? '<span class="chip late">overdue</span>' : ''}</span></div><span class="ext">↗</span></a>`;
+}
 function teamShoots(day){
   const m = new Map();
   for(const j of team.jobs){
@@ -1676,10 +1688,11 @@ function vTeam(){
   const off = (new Date(y,mo,1).getDay()+6)%7, dim = new Date(y,mo+1,0).getDate(), cells = Math.ceil((off+dim)/7)*7;
   let html = '';
   for(let c=0;c<cells;c++){
-    const d = new Date(y,mo,1-off+c), s = ymd(d), sh = teamShoots(s);
-    const chips = sh.slice(0,2).map(g => `<span class="ev a">${g.time?esc(g.time)+' ':''}${esc(g.title)}</span>`).join('');
+    const d = new Date(y,mo,1-off+c), s = ymd(d), sh = teamShoots(s), ag = armAg(s);
+    const allC = [...sh.map(g => `<span class="ev a">${g.time?esc(g.time)+' ':''}${esc(g.title)}</span>`), ...ag.map(a => `<span class="ev g ${a.done?'done':''}">${a.start?esc(a.start)+' ':''}${esc(a.title)}</span>`)];
+    const chips = allC.slice(0,2).join('');
     html += `<button type="button" class="d ${d.getMonth()!==mo?'out':''} ${s===t?'today':''} ${s===ui.teamSel?'sel':''}" data-tday="${s}" aria-label="${d.getDate()} ${BLN[d.getMonth()]}, ${sh.length} jobs">
-      <span class="dn">${d.getDate()}</span>${chips}${sh.length>2?`<span class="more">+${sh.length-2} more</span>`:''}<span class="dots">${sh.slice(0,4).map(()=>'<i class="a"></i>').join('')}</span></button>`;
+      <span class="dn">${d.getDate()}</span>${chips}${allC.length>2?`<span class="more">+${allC.length-2} more</span>`:''}<span class="dots">${[...sh.map(()=>'<i class="a"></i>'), ...ag.map(()=>'<i class="g"></i>')].slice(0,4).join('')}</span></button>`;
   }
   const sel = ui.teamSel || t, sd = parseYmd(sel), list = teamShoots(sel);
   return `<div class="stack">${head}${stats}
@@ -1692,6 +1705,7 @@ function vTeam(){
         <div class="days">${html}</div>
       </div>
       ${panel(`${HARI[sd.getDay()]}, ${sd.getDate()} ${BLN[sd.getMonth()]} · ${list.length} job${list.length===1?'':'s'}`, list.length ? list.map(rowShoot).join('') : empty('No jobs on this day.'))}
+      ${armAg(sel).length ? panel('Meetings, tasks & reminders', armAg(sel).map(rowAg).join('')) : ''}
     </div></div>`;
 }
 
@@ -1859,6 +1873,7 @@ document.addEventListener('pointerleave', ev => { const box = ev.target && ev.ta
 function dayItems(s){
   return {
     a: teamShoots(s),
+    g: armAg(s),
     e: byKind('event').filter(i => i.date===s).sort(byStart),
     r: byKind('reminder').filter(i => (i.at||'').slice(0,10)===s).sort(byAt),
     t: byKind('task').filter(i => i.due===s),
@@ -1879,18 +1894,19 @@ function vCalendar(){
     const it = dayItems(s);
     const chips = [...it.e.map(i=>`<span class="ev e">${i.start?esc(i.start)+' ':''}${esc(i.title)}</span>`),
                    ...it.a.map(g=>`<span class="ev a">${g.time?esc(g.time)+' ':''}${esc(g.title)}</span>`),
+                   ...it.g.map(a=>`<span class="ev g ${a.done?'done':''}">${a.start?esc(a.start)+' ':''}${esc(a.title)}</span>`),
                    ...it.r.map(i=>`<span class="ev r">${esc(i.title)}</span>`),
                    ...it.t.map(i=>`<span class="ev t">${esc(i.title)}</span>`),
                    ...it.p.map(i=>`<span class="ev p">${esc(i.title)}</span>`)];
-    const dots = [...it.a.map(()=>'<i class="a"></i>'), ...it.e.map(()=>'<i class="e"></i>'), ...it.r.map(()=>'<i class="r"></i>'), ...it.t.map(()=>'<i class="t"></i>'), ...it.p.map(()=>'<i class="p"></i>')].slice(0,4).join('');
+    const dots = [...it.a.map(()=>'<i class="a"></i>'), ...it.g.map(()=>'<i class="g"></i>'), ...it.e.map(()=>'<i class="e"></i>'), ...it.r.map(()=>'<i class="r"></i>'), ...it.t.map(()=>'<i class="t"></i>'), ...it.p.map(()=>'<i class="p"></i>')].slice(0,4).join('');
     html += `<button type="button" class="d ${d.getMonth()!==mo?'out':''} ${s===t?'today':''} ${s===ui.calSel?'sel':''}" data-day="${s}" aria-label="${d.getDate()} ${BLN[d.getMonth()]}">
       <span class="dn">${d.getDate()}</span>${chips.slice(0,3).join('')}${chips.length>3?`<span class="more">+${chips.length-3} more</span>`:''}<span class="dots">${dots}</span></button>`;
   }
   const sel = dayItems(ui.calSel), sd = parseYmd(ui.calSel);
-  const selList = [...sel.a.map(rowShoot), ...sel.e.map(i=>rowEv(i)), ...sel.r.map(rowRem), ...sel.t.map(rowTask),
+  const selList = [...sel.a.map(rowShoot), ...sel.g.map(rowAg), ...sel.e.map(i=>rowEv(i)), ...sel.r.map(rowRem), ...sel.t.map(rowTask),
     ...sel.p.map(i=>`<div class="row" data-open="${i.id}"><span class="kbar" style="background:var(--plum)"></span><div class="rt"><span class="t">${esc(i.title)}</span></div></div>`)].join('');
   return `<div class="stack">
-    <div class="head"><div><h1>Calendar</h1><p>Events, reminders, due dates, expiry dates, birthdays${team.connected?' and ARMEDIA team shoots':''} in one view.</p></div></div>
+    <div class="head"><div><h1>Calendar</h1><p>Events, reminders, due dates, expiry dates, birthdays${team.connected?', ARMEDIA team shoots, meetings, tasks and reminders':''} in one view.</p></div></div>
     <div class="grid two">
       <div class="cal">
         <div class="ch"><button class="btn sm" data-cal="-1" aria-label="Previous month">‹</button>
