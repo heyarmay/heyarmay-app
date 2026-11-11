@@ -453,6 +453,10 @@ function handleErr(e){
 const colFor = k => k==='expense' ? expCol : col;
 async function addItem(data){
   data.created = Date.now();
+  if(data.kind==='expense' && !data.docNo && typeof nextDocNo === 'function'){
+    data.code = data.code || codeOf(data.cat); data.docNo = nextDocNo(data.scope, data.date || today(), data.code);
+    if(data.receiptId && !data.receiptName) data.receiptName = data.docNo + '.jpg';
+  }
   const c = colFor(data.kind);
   if(c){
     try { const ref = c.doc(); await ref.set(data); return ref.id; }
@@ -1016,7 +1020,8 @@ function vExpenses(){
   for(const e of list){
     if(e.date!==lastD){ lastD = e.date; lh += `<div class="dayhead"><span>${esc(fmtD(e.date))}</span><span class="mono">${money(list.filter(x => x.date===e.date).reduce(sumAmt,0))}</span></div>`; }
     lh += `<div class="row" data-vch="${e.id}"><div class="rt"><span class="t">${esc(e.note||catName(e.cat))}</span>
-      <span class="meta"><span class="chip">${esc(catName(e.cat))}</span>${scopeOf(e)==='bisnes'?'<span class="chip ev">Business</span>':''}${e.method?`<span>${esc(methodName(e.method))}</span>`:''}${e.receiptId?'<span class="chip task">receipt</span>':''}${e.billRef?'<span>from Bills</span>':''}${exChip(e)}</span></div>
+      <span class="docl">${e.docNo ? esc(e.docNo) : ''}${e.receiptId ? ' 🖼' : ''}</span>
+      <span class="meta"><span class="chip">${esc(catName(e.cat))}</span>${scopeOf(e)==='bisnes'?'<span class="chip ev">Business</span>':''}${e.method?`<span>${esc(methodName(e.method))}</span>`:''}${e.billRef?'<span>from Bills</span>':''}${exChip(e)}</span></div>
       <span class="amt">${money(e.amount)}</span></div>`;
   }
   const listTitle = E.day ? `Spending ${fmtD(E.day)}` : E.cat ? catName(E.cat) : 'Transactions';
@@ -1038,7 +1043,7 @@ function vExpenses(){
       </div></form>
     <div class="inline" style="justify-content:space-between">
       <div class="filters">${[['semua','All'],['peribadi','Personal'],['bisnes','Business']].map(([k,l]) => `<button data-escopef="${k}" class="${E.scope===k?'on':''}">${l}</button>`).join('')}</div>
-      <div class="inline">${sample?`<button class="btn sm" data-act="exp-sum" ${E.sumBusy?'disabled':''}>Summarise this month</button>`:''}<button class="btn sm" data-act="bud-open">Budget</button>${downloads?'<button class="btn sm" data-act="exp-csv">Download CSV</button><button class="btn sm" data-act="exp-pdf">Business vouchers (PDF)</button>':''}</div></div>
+      <div class="inline">${sample?`<button class="btn sm" data-act="exp-sum" ${E.sumBusy?'disabled':''}>Summarise this month</button>`:''}<button class="btn sm" data-act="bud-open">Budget</button>${downloads?'<button class="btn sm" data-act="exp-zip">Receipts (ZIP)</button><button class="btn sm" data-act="exp-csv">Download CSV</button><button class="btn sm" data-act="exp-pdf">Business vouchers (PDF)</button>':''}</div></div>
     <div class="panel"><div class="stat">
       <div><b>${money(total)}</b><span>${E.scope==='semua'?'total':E.scope==='bisnes'?'business':'personal'} ${cur?'so far':'for the month'}</span></div>
       <div><b>${money(total/Math.max(1,upTo))}</b><span>daily average</span></div>
@@ -1116,6 +1121,12 @@ async function shrinkImage(file){
     return b || file;
   } catch(e){ return file; }
 }
+async function rotateBlob(blob, deg){
+  const bmp = await createImageBitmap(blob), c = document.createElement('canvas'), q = deg % 180 !== 0;
+  c.width = q ? bmp.height : bmp.width; c.height = q ? bmp.width : bmp.height;
+  const g = c.getContext('2d'); g.translate(c.width/2, c.height/2); g.rotate(deg * Math.PI / 180); g.drawImage(bmp, -bmp.width/2, -bmp.height/2);
+  return await new Promise(res => c.toBlob(b => res(b || blob), 'image/jpeg', 0.88));
+}
 const numOrNull = x => (x===null || x===undefined || x==='' || isNaN(Number(x))) ? null : Math.round(Number(x)*100)/100;
 async function scanReceipt(file){
   if(!file || !sample) return;
@@ -1132,22 +1143,16 @@ Read it carefully and reply with JSON only:
  "cat": one of ${EXP_CAT.map(c => c[0]).join('|')}, "note": "short English summary of what was bought, max 6 words"}
 List at most 30 items. Item names in Latin letters (translate if needed). Do not invent numbers that are not on the receipt.
 If this is not a receipt or the total is unclear, reply {"amount": null}.`, {images:[img], modelTier:'quick', cache:false});
-    ui.exp.scan = false;
-    if(!r || !(Number(r.amount) > 0)){ render(); toast("Couldn't read the total in this photo. Fill it in manually."); return; }
-    const items = (Array.isArray(r.items) ? r.items : []).slice(0,30)
+    ui.exp.scan = false; render();
+    const ok = r && Number(r.amount) > 0;
+    const items = ok ? (Array.isArray(r.items) ? r.items : []).slice(0,30)
       .map(x => ({name:String(x && x.name || '').slice(0,80), qty:numOrNull(x && x.qty), price:numOrNull(x && x.price)}))
-      .filter(x => x.name);
-    ui.exp.pending = {blob:img, receipt:{merchant:String(r.merchant||'').slice(0,80), no:String(r.receiptNo||'').slice(0,40), time:/^\d{2}:\d{2}$/.test(r.time||'')?r.time:'',
-      items, subtotal:numOrNull(r.subtotal), discount:numOrNull(r.discount), tax:numOrNull(r.tax)}};
-    render();
-    if(!r.note && r.merchant) r.note = r.merchant;
-    const set = (id, val) => { const el = document.getElementById(id); if(el && val!=null && val!=='') el.value = val; };
-    set('ex-amt', Number(r.amount).toFixed(2));
-    set('ex-note', String(r.note||'').slice(0,120));
-    if(EXP_CAT.some(c => c[0]===r.cat)) set('ex-cat', r.cat);
-    if(isYmd(r.date) && r.date <= today()) set('ex-date', r.date);
-    if(METHOD.some(c => c[0] && c[0]===r.method)) set('ex-method', r.method);
-    toast('Receipt read. Check it, then tap Record.');
+      .filter(x => x.name) : [];
+    const pend = {blob:img, receipt: ok ? {merchant:String(r.merchant||'').slice(0,80), no:String(r.receiptNo||'').slice(0,40), time:/^\d{2}:\d{2}$/.test(r.time||'')?r.time:'',
+      items, subtotal:numOrNull(r.subtotal), discount:numOrNull(r.discount), tax:numOrNull(r.tax)} : {}};
+    if(ok && !r.note && r.merchant) r.note = r.merchant;
+    openRecord(pend, ok ? r : {});
+    if(!ok) toast("Couldn't read the total. Fill in the amount, then Save.");
     return;
   } catch(e){
     const c = e && e.code;
@@ -1211,6 +1216,96 @@ function totalsOf(e){
   if(Number(r.tax)) out.push(['SST / tax / charges', Number(r.tax)]);
   return out;
 }
+/* ---------- Resit tersusun: nombor dokumen, nama fail, borang rekod ---------- */
+const CODE = {makan:'FOOD', transport:'FUEL', dapur:'HOME', bil:'BILL', keluarga:'FAM', kesihatan:'HLTH', belibelah:'SHOP', hiburan:'FUN', perjalanan:'TRVL', sedekah:'CHAR', kerja:'WORK', lain:'MISC'};
+const codeOf = cat => CODE[cat] || 'MISC';
+const cleanCode = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'MISC';
+const docBase = (scope, date, code) => { const d = String(date || today()); return `${scope==='bisnes' ? 'ARM' : 'PER'}-EX-${d.slice(8,10)}.${d.slice(5,7)}.${d.slice(2,4)}-${cleanCode(code)}`; };
+function nextDocNo(scope, date, code){
+  const b = docBase(scope, date, code);
+  const n = exps.filter(e => String(e.docNo || '').startsWith(b)).map(e => parseInt(String(e.docNo).slice(b.length), 10) || 0);
+  return b + pad(Math.max(0, ...n) + 1);
+}
+const docOf = e => e.docNo || voucherRef(e);
+const extOf = t => /png/i.test(t || '') ? 'png' : 'jpg';
+const kbTxt = n => n >= 1048576 ? (n/1048576).toFixed(1) + ' MB' : (n/1024).toFixed(1) + ' KB';
+const docChips = s => String(s).split('-').map(x => `<span>${esc(x)}</span>`).join('<i>-</i>');
+
+function openRecord(pend, r){
+  r = r || {};
+  const m = $('#modal'), t = today();
+  const cat = EXP_CAT.some(c => c[0]===r.cat) ? r.cat : 'lain';
+  const scope = ui.exp.newScope || 'peribadi';
+  const date = isYmd(r.date) && r.date <= t ? r.date : t;
+  if(pend && !pend.url) pend.url = URL.createObjectURL(pend.blob);
+  ui.rec = {pend, rot: 0, codeEdited: false};
+  const its = (pend && pend.receipt && pend.receipt.items) || [];
+  m.innerHTML = `<div class="sheet wide rec" role="dialog" aria-modal="true" aria-label="Record expense">
+    <div class="rec-h"><h2>Record expense</h2><button type="button" class="dt-x" data-act="close" aria-label="Close">×</button></div>
+    <div class="rec-g">
+      ${pend ? `<div class="rec-img"><i class="dx-c tl"></i><i class="dx-c tr"></i><i class="dx-c bl"></i><i class="dx-c br"></i>
+        <div class="rec-pic"><img id="rec-img" src="${pend.url}" alt="Receipt photo"></div>
+        <div class="rec-tools"><button type="button" class="ib" data-act="rec-rot" aria-label="Rotate" title="Rotate">↻</button><button type="button" class="ib" data-act="rec-zoom" aria-label="View full size" title="View full size">⤢</button></div></div>` : ''}
+      <form id="f-rec" class="rec-f" autocomplete="off">
+        <label class="lb">Payee<input class="f" id="rec-payee" value="${esc(r.merchant || '')}" placeholder="Shop or company"></label>
+        <label class="lb"><span>Amount (RM) <b class="req">*</b></span><input class="f amtin" id="rec-amt" type="number" inputmode="decimal" step="0.01" min="0" value="${Number(r.amount) > 0 ? Number(r.amount).toFixed(2) : ''}" required></label>
+        <label class="lb"><span>Date <b class="req">*</b></span><input class="f" id="rec-date" type="date" value="${date}" max="${t}" required></label>
+        <label class="lb">Paid with<select class="f" id="rec-method">${METHOD.map(([k,l]) => `<option value="${k}" ${k===(METHOD.some(c => c[0] && c[0]===r.method) ? r.method : lastMethod)?'selected':''}>${k?l:'—'}</option>`).join('')}</select></label>
+        <label class="lb">Category<select class="f" id="rec-cat">${EXP_CAT.map(([k,l]) => `<option value="${k}" ${k===cat?'selected':''}>${l}</option>`).join('')}</select></label>
+        <label class="lb">Code name<input class="f mono" id="rec-code" value="${codeOf(cat)}" maxlength="8" autocapitalize="characters"></label>
+        <div class="lb full">Type<div class="seg" role="radiogroup">${SCOPE.map(([k,l]) => `<label><input type="radio" name="rec-scope" value="${k}" ${k===scope?'checked':''}><span>${l}</span></label>`).join('')}</div></div>
+        <label class="lb full">What for<input class="f" id="rec-note" value="${esc(String(r.note || '').slice(0,120))}" placeholder="e.g. fuel, lunch with client"></label>
+        <div class="lb full">Document number<div class="docno" id="rec-doc"></div></div>
+        ${pend ? `<div class="rec-file full"><span class="fi">🖼</span><div><b id="rec-fn"></b><span>${pend.blob.type==='image/png'?'PNG':'JPEG'} · ${kbTxt(pend.blob.size)}</span></div></div>` : ''}
+        ${its.length ? `<details class="full rec-items"><summary>${its.length} item${its.length>1?'s':''} on the receipt</summary><table>${its.map(x => `<tr><td>${esc(x.name)}${x.qty?` <span class="muted">×${esc(x.qty)}</span>`:''}</td><td class="n">${x.price!=null?fix2(x.price):''}</td></tr>`).join('')}</table></details>` : ''}
+        <div class="full rec-acts"><button type="button" class="btn" data-act="close">Cancel</button><button type="submit" class="btn pri">💾 Save expense</button></div>
+      </form>
+    </div></div>`;
+  m.hidden = false;
+  recSync();
+}
+function recSync(){
+  const el = id => document.getElementById(id); if(!el('f-rec')) return;
+  if(!ui.rec.codeEdited) el('rec-code').value = codeOf(el('rec-cat').value);
+  const scope = (document.querySelector('input[name=rec-scope]:checked') || {}).value || 'peribadi';
+  const doc = nextDocNo(scope, el('rec-date').value || today(), el('rec-code').value);
+  el('rec-doc').innerHTML = docChips(doc);
+  if(el('rec-fn') && ui.rec.pend) el('rec-fn').textContent = doc + '.' + extOf(ui.rec.pend.blob.type);
+}
+document.addEventListener('input', ev => {
+  const T = ev.target; if(!T.closest || !T.closest('#f-rec')) return;
+  if(T.id === 'rec-code'){ ui.rec.codeEdited = true; T.value = T.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8); }
+  recSync();
+});
+document.addEventListener('change', ev => { if(ev.target.closest && ev.target.closest('#f-rec')) recSync(); });
+async function saveBlobAs(blob, name){
+  if(!downloads){ toast('Downloads are not available in this view.'); return; }
+  try { await downloads.save({filename: name, data: blob}); toast('Saved ' + name); } catch(e){ toast("Couldn't save the file."); }
+}
+let zipP = null;
+function loadZip(){
+  if(window.JSZip) return Promise.resolve(window.JSZip);
+  if(!zipP) zipP = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; s.onload = () => window.JSZip ? res(window.JSZip) : rej(new Error('zip')); s.onerror = () => { zipP = null; rej(new Error('load')); }; document.head.appendChild(s); });
+  return zipP;
+}
+async function receiptsZip(month){
+  const list = monthExps(month).slice().sort((a,b) => (a.date + docOf(a)).localeCompare(b.date + docOf(b)));
+  if(!list.length){ toast('No expenses this month.'); return; }
+  toast('Preparing receipts…');
+  let Z; try { Z = await loadZip(); } catch(e){ toast("The ZIP tool couldn't load. Try again shortly."); return; }
+  const z = new Z(), used = new Set(), rows = [['Document no','Date','Payee','What for','Category','Type','Payment method','Amount (RM)','Receipt file']];
+  for(const e of list){
+    let fn = '';
+    if(e.receiptId){
+      try { const r = await fetch('/_blob/' + e.receiptId); if(r.ok){ const b = await r.blob(); fn = e.receiptName || (docOf(e) + '.' + extOf(b.type)); while(used.has(fn)) fn = fn.replace(/(\.\w+)$/, '_$1'); used.add(fn); z.file('receipts/' + fn, b); } } catch(err){}
+    }
+    rows.push([docOf(e), e.date, (e.receipt && e.receipt.merchant) || '', e.note || '', catName(e.cat), scopeOf(e)==='bisnes' ? 'Business' : 'Personal', methodName(e.method) || '', fix2(e.amount), fn ? 'receipts/' + fn : '']);
+  }
+  z.file('expenses-' + month + '.csv', '﻿' + rows.map(r => r.map(c => /[",\n]/.test(String(c)) ? '"' + String(c).replace(/"/g, '""') + '"' : c).join(',')).join('\r\n'));
+  const blob = await z.generateAsync({type: 'blob'});
+  await saveBlobAs(blob, `receipts-${month}.zip`);
+}
+
 function openVoucher(e){
   if(!e) return;
   editing = null;
@@ -1221,7 +1316,7 @@ function openVoucher(e){
       <div class="inline">${downloads?'<button class="btn sm pri" data-act="vch-pdf">Download PDF</button>':''}<button class="btn sm" data-act="vch-edit">Edit details</button><button class="btn ghost sm" data-act="close">Close</button></div></div>
     <div class="vch">
       <div class="vh"><div><div class="org">${biz ? esc(ORG) : 'Personal Record'}</div><div class="small muted">${biz ? 'Company expense' : 'Personal expense'}</div></div>
-        <div><div class="doc">${biz ? 'Expense Voucher' : 'Expense Record'}</div><div class="ref">${esc(voucherRef(e))}</div></div></div>
+        <div><div class="doc">${biz ? 'Expense Voucher' : 'Expense Record'}</div><div class="ref">${esc(docOf(e))}</div></div></div>
       <dl>
         <dt>Date</dt><dd>${esc(longDate(e.date))}${r.time?' · '+esc(r.time):''}</dd>
         <dt>Paid to</dt><dd>${esc(r.merchant || e.note || '-')}</dd>
@@ -1237,6 +1332,7 @@ function openVoucher(e){
       </table></div>
       <div class="words">${esc(rmWords(e.amount))}</div>
       ${biz ? '<div class="sig"><div>Prepared by</div><div>Approved by</div></div>' : ''}
+      ${e.receiptId ? `<div class="rec-file vf"><span class="fi">🖼</span><div><b>${esc(e.receiptName || docOf(e) + '.jpg')}</b><span>Original receipt</span></div>${downloads ? '<button type="button" class="btn sm" data-act="vch-img">Download</button>' : ''}</div>` : ''}
       ${e.receiptId ? `<div class="att"><h4>Attachment: original receipt</h4><img src="/_blob/${esc(e.receiptId)}" alt="Original receipt photo" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'small muted',textContent:"The receipt photo can't be shown in this view."}))"></div>` : ''}
       <div class="fn">This internal document was prepared from ${e.receiptId ? 'the attached original receipt' : 'an expense record'} and is not an official receipt from the merchant. ${e.receiptId ? 'Keep the original receipt for claims and tax reference.' : 'Attach the original receipt, if any, for tax claims.'}</div>
     </div></div>`;
@@ -1271,7 +1367,7 @@ function drawVoucher(doc, e, img){
   doc.setFontSize(8.5); doc.setTextColor(110);
   doc.text(biz ? 'EXPENSE VOUCHER' : 'EXPENSE RECORD', R, y-7, {align:'right'});
   doc.setFont('courier','bold'); doc.setFontSize(12); doc.setTextColor(20);
-  doc.text(voucherRef(e), R, y, {align:'right'});
+  doc.text(docOf(e), R, y, {align:'right'});
   y += 4; doc.setDrawColor(20); doc.setLineWidth(0.7); doc.line(M, y, R, y); y += 9;
   const rows = [['Date', longDate(e.date) + (r.time ? '  ' + r.time : '')], ['Paid to', r.merchant || e.note || '-']];
   if(r.no) rows.push(['Original receipt no.', r.no]);
@@ -2661,7 +2757,11 @@ document.addEventListener('click', async ev => {
   if(k==='vz-add') vzAdd();
   if(k==='vz-clear'){ ui.voice = {...ui.voice, text:'', res:null, summary:''}; renderVoice(); }
   if(k==='voucher'){ const id = editing && editing.id; closeEditor(); openVoucher(get(id)); }
-  if(k==='vch-pdf'){ const e = get($('#modal').dataset.vid); if(e) savePdf([e], `${voucherRef(e)}.pdf`); }
+  if(k==='vch-pdf'){ const e = get($('#modal').dataset.vid); if(e) savePdf([e], `${docOf(e)}.pdf`); }
+  if(k==='vch-img'){ const e = get($('#modal').dataset.vid); if(e && e.receiptId){ try { const r = await fetch('/_blob/' + e.receiptId); const b = await r.blob(); await saveBlobAs(b, e.receiptName || docOf(e) + '.' + extOf(b.type)); } catch(err){ toast("Couldn't download the receipt."); } } }
+  if(k==='rec-rot'){ ui.rec.rot = (ui.rec.rot + 90) % 360; const i = $('#rec-img'); if(i) i.style.transform = `rotate(${ui.rec.rot}deg)`; }
+  if(k==='rec-zoom'){ const i = $('#rec-img'); if(i) i.closest('.rec-img').classList.toggle('big'); }
+  if(k==='exp-zip') receiptsZip(ui.exp.month);
   if(k==='vch-edit'){ const e = get($('#modal').dataset.vid); closeEditor(); openEditor(e, true); }
   if(k==='exp-sum') expSummary();
   if(k==='exp-clearf'){ ui.exp.cat = ''; ui.exp.day = ''; render(); }
@@ -2706,6 +2806,33 @@ document.addEventListener('submit', async ev => {
   if(F.classList.contains('trip-add')){ const tr = get(F.dataset.trip); const x = F.elements.t.value.trim(); if(!tr || !x) return;
     await updItem(tr.id, {list:[...(tr.list||[]), {g:'Other', t:x, done:false}]}); return; }
   const add = async (data, msg) => { F.reset(); if(await addItem(data)) toast(msg); };
+  if(f==='f-rec'){
+    const amount = num('rec-amt');
+    if(!(amount > 0)){ toast('Enter an amount.'); return; }
+    const scope = (document.querySelector('input[name=rec-scope]:checked') || {}).value || 'peribadi';
+    const date = isYmd(v('rec-date')) ? v('rec-date') : t, cat = v('rec-cat'), code = cleanCode(v('rec-code')), method = v('rec-method');
+    const pend = ui.rec && ui.rec.pend;
+    const docNo = nextDocNo(scope, date, code);
+    const data = {kind:'expense', amount:Math.round(amount*100)/100, note:v('rec-note') || v('rec-payee'), cat, scope, date, method, code, docNo, vno:nextVno(scope, date)};
+    if(pend){
+      data.receipt = {...(pend.receipt || {}), merchant: v('rec-payee')};
+      if(assets){
+        const btn = F.querySelector('[type=submit]'); if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
+        let blob = pend.blob;
+        if(ui.rec.rot){ try { blob = await rotateBlob(blob, ui.rec.rot); } catch(e){} }
+        try { const up = await assets.upload(blob, {type: blob.type==='image/png' ? 'image/png' : 'image/jpeg'}); data.receiptId = up.id; data.receiptName = docNo + '.' + extOf(blob.type); }
+        catch(e){ toast(e && e.code==='quota_or_state' ? 'Photo storage is full. Saved without the receipt photo.' : "The receipt photo couldn't be saved. The record was still saved."); }
+      }
+    } else if(v('rec-payee')) data.receipt = {merchant: v('rec-payee')};
+    lastMethod = method; try { localStorage.setItem('pd-method', method); } catch(e){}
+    closeEditor();
+    if(pend && pend.url) URL.revokeObjectURL(pend.url);
+    ui.rec = null;
+    const nid = await addItem(data);
+    if(nid) toast(`Saved · ${docNo}`, {label:'View', fn:() => openVoucher(get(nid) || {id:nid, ...data})});
+    render();
+    return;
+  }
   if(f==='f-exp'){
     const amount = num('ex-amt');
     if(!(amount > 0)){ toast('Enter an amount.'); return; }
@@ -2723,6 +2850,8 @@ document.addEventListener('submit', async ev => {
       }
     }
     if(data.cat==='auto') data.cat = await guessCat(note);
+    data.code = codeOf(data.cat); data.docNo = nextDocNo(scope, date, data.code);
+    if(data.receiptId) data.receiptName = data.docNo + '.jpg';
     const nid = await addItem(data);
     if(nid) toast(`${money(amount)} recorded · ${catName(data.cat)}${scope==='bisnes'?' · business':''}`, {label:'View record', fn:() => openVoucher(get(nid) || {id:nid, ...data})});
     render();
