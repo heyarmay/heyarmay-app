@@ -1170,8 +1170,9 @@ function scOtsu(g){
 }
 const scFull = c => [[0,0],[c.width,0],[c.width,c.height],[0,c.height]];
 // Paper is the biggest bright patch; its four extreme points are the corners.
+// Also returns a paper mask so whatever isn't paper (table, fingers) can be blanked to white.
 function scDetect(c){
-  const full = scFull(c);
+  const full = {q: scFull(c), mask: null};
   try {
     const {w, h, g, s} = scGray(c, 400), thr = scOtsu(g);
     const m = new Uint8Array(w*h); for(let i = 0; i < m.length; i++) m[i] = g[i] > thr ? 1 : 0;
@@ -1189,8 +1190,19 @@ function scDetect(c){
       if(n > bestN){ bestN = n; bestL = L; bestEdge = edge; } L++;
     }
     const frac = bestN / (w*h);
-    // Too small, or it fills the frame (paper bigger than photo, or bright background): keep the whole photo.
     if(bestL < 0 || frac < 0.06 || frac > 0.93 || bestEdge > 1.2*(w + h)) return full;
+    // paper = the patch plus its enclosed holes (the printing); anything reachable from the border without crossing paper is outside
+    const out = new Uint8Array(w*h); let sp = 0;
+    const seed = p => { if(lab[p] !== bestL && !out[p]){ out[p] = 1; st[sp++] = p; } };
+    for(let x = 0; x < w; x++){ seed(x); seed((h-1)*w + x); } for(let y = 0; y < h; y++){ seed(y*w); seed(y*w + w - 1); }
+    while(sp){ const p = st[--sp], x = p % w, y = (p / w) | 0;
+      if(x > 0) seed(p-1); if(x < w-1) seed(p+1); if(y > 0) seed(p-w); if(y < h-1) seed(p+w); }
+    const pm = new Float32Array(w*h);
+    for(let p = 0; p < pm.length; p++){ if(out[p]) continue; const x = p % w, y = (p / w) | 0;
+      // shave one pixel off the paper edge so no dark fringe survives
+      if((x > 0 && out[p-1]) || (x < w-1 && out[p+1]) || (y > 0 && out[p-w]) || (y < h-1 && out[p+w])) continue; pm[p] = 1; }
+    const pb = new Float32Array(w*h); // soften the edge a little
+    for(let y = 0; y < h; y++) for(let x = 0; x < w; x++){ let t = 0, n = 0; for(let dy = -1; dy <= 1; dy++) for(let dx = -1; dx <= 1; dx++){ const X = x+dx, Y = y+dy; if(X >= 0 && Y >= 0 && X < w && Y < h){ t += pm[Y*w + X]; n++; } } pb[y*w + x] = t/n; }
     let tl = [0,0,1e9], tr = [0,0,-1e9], br = [0,0,-1e9], bl = [0,0,1e9];
     for(let p = 0; p < lab.length; p++){ if(lab[p] !== bestL) continue; const x = p % w, y = (p / w) | 0, a = x + y, b = x - y;
       if(a < tl[2]) tl = [x,y,a]; if(a > br[2]) br = [x,y,a]; if(b > tr[2]) tr = [x,y,b]; if(b < bl[2]) bl = [x,y,b]; }
@@ -1198,9 +1210,7 @@ function scDetect(c){
     const q = [tl, tr, br, bl].map(([x, y]) => [cl((x + .5)*k, c.width), cl((y + .5)*k, c.height)]);
     const area = Math.abs(q.reduce((a, [x, y], i) => { const [X, Y] = q[(i+1) % 4]; return a + x*Y - X*y; }, 0)) / 2;
     if(area < 0.06*c.width*c.height) return full;
-    // pull each corner in a hair so no table shows at the paper edge
-    const cx = q.reduce((a, p) => a + p[0], 0)/4, cy = q.reduce((a, p) => a + p[1], 0)/4;
-    return q.map(([x, y]) => [cl(x - (x - cx)*.006, c.width), cl(y - (y - cy)*.006, c.height)]);
+    return {q, mask: {w, h, s, m: pb}};
   } catch(e){ return full; }
 }
 function scHomog(src, dst){ // maps dst points onto src points
@@ -1216,23 +1226,26 @@ function scHomog(src, dst){ // maps dst points onto src points
   const hm = B.map((b, i) => b / (A[i][i] || 1e-12)); hm.push(1); return hm;
 }
 const scIsFull = (c, q) => q[0][0] <= 1 && q[0][1] <= 1 && q[1][0] >= c.width-1 && q[1][1] <= 1 && q[2][0] >= c.width-1 && q[2][1] >= c.height-1 && q[3][0] <= 1 && q[3][1] >= c.height-1;
-function scWarp(c, q){
+function scWarp(c, q, mask){
   const d = (a, b) => Math.hypot(a[0]-b[0], a[1]-b[1]);
   let W = Math.max(d(q[0], q[1]), d(q[3], q[2])), H = Math.max(d(q[0], q[3]), d(q[1], q[2]));
   const s = Math.min(1, 2000 / Math.max(W, H)); W = Math.max(8, Math.round(W*s)); H = Math.max(8, Math.round(H*s));
   const o = scCanvas(W, H), ox = scCtx(o);
-  if(scIsFull(c, q)){ ox.drawImage(c, 0, 0, W, H); return o; }
+  if(!mask && scIsFull(c, q)){ ox.drawImage(c, 0, 0, W, H); return o; }
   const sw = c.width, sh = c.height, sd = scCtx(c).getImageData(0, 0, sw, sh).data;
   const od = ox.createImageData(W, H), D = od.data, hm = scHomog(q, [[0,0],[W,0],[W,H],[0,H]]);
+  const mw = mask && mask.w, mh = mask && mask.h, ms = mask && mask.s, mm = mask && mask.m, AL = mm ? new Float32Array(W*H) : null;
   for(let y = 0; y < H; y++) for(let x = 0; x < W; x++){
     const z = hm[6]*x + hm[7]*y + 1, u = (hm[0]*x + hm[1]*y + hm[2]) / z, v = (hm[3]*x + hm[4]*y + hm[5]) / z;
     const x0 = Math.max(0, Math.min(sw-2, Math.floor(u))), y0 = Math.max(0, Math.min(sh-2, Math.floor(v)));
     const fx = Math.max(0, Math.min(1, u - x0)), fy = Math.max(0, Math.min(1, v - y0));
     const i00 = (y0*sw + x0)*4, i10 = i00 + 4, i01 = i00 + sw*4, i11 = i01 + 4, j = (y*W + x)*4;
+    if(mm){ const mu = Math.max(0, Math.min(mw - 1.001, u*ms - .5)), mv = Math.max(0, Math.min(mh - 1.001, v*ms - .5)), mx = mu | 0, my = mv | 0, tx = mu - mx, ty = mv - my, b0 = my*mw + mx;
+      const a = (mm[b0]*(1-tx) + mm[b0+1]*tx)*(1-ty) + (mm[b0+mw]*(1-tx) + mm[b0+mw+1]*tx)*ty; AL[y*W + x] = Math.min(1, Math.max(0, (a - .25) / .5)); }
     for(let k = 0; k < 3; k++) D[j+k] = (sd[i00+k]*(1-fx) + sd[i10+k]*fx)*(1-fy) + (sd[i01+k]*(1-fx) + sd[i11+k]*fx)*fy;
     D[j+3] = 255;
   }
-  ox.putImageData(od, 0, 0); return o;
+  ox.putImageData(od, 0, 0); o._a = AL; return o;
 }
 function scRot(c, deg){
   deg = ((deg % 360) + 360) % 360; if(!deg) return c;
@@ -1242,8 +1255,8 @@ function scRot(c, deg){
 // Even out shadows and creases: estimate the paper brightness in blocks, divide it out, then set levels.
 function scClean(c, mode){
   if(mode === 'orig') return c;
-  const w = c.width, h = c.height, src = scCtx(c).getImageData(0, 0, w, h), d = src.data;
-  const B = Math.max(10, Math.round(Math.max(w, h) / 40)), bw = Math.ceil(w / B), bh = Math.ceil(h / B);
+  const w = c.width, h = c.height, src = scCtx(c).getImageData(0, 0, w, h), d = src.data, AL = c._a && c._a.length === w*h ? c._a : null;
+  const B = Math.max(8, Math.round(Math.max(w, h) / 75)), bw = Math.ceil(w / B), bh = Math.ceil(h / B);
   const bgL = new Float32Array(bw*bh), bgR = new Float32Array(bw*bh), bgG = new Float32Array(bw*bh), bgB = new Float32Array(bw*bh);
   const hist = new Uint32Array(256);
   for(let by = 0; by < bh; by++) for(let bx = 0; bx < bw; bx++){
@@ -1255,9 +1268,9 @@ function scClean(c, mode){
     for(let y = by*B; y < y1; y += 2) for(let x = bx*B; x < x1; x += 2){ const j = (y*w + x)*4; if(0.299*d[j] + 0.587*d[j+1] + 0.114*d[j+2] >= v){ r += d[j]; g += d[j+1]; b += d[j+2]; m++; } }
     const k = by*bw + bx; bgL[k] = Math.max(v, 24); bgR[k] = m ? r/m : v; bgG[k] = m ? g/m : v; bgB[k] = m ? b/m : v;
   }
-  const smooth = a => { // max 3x3 (bridges dense text), then two box blurs
+  const smooth = a => { // max 5x5 (bridges dense text and barcodes), then two box blurs
     let t = new Float32Array(a.length);
-    for(let y = 0; y < bh; y++) for(let x = 0; x < bw; x++){ let mx = 0; for(let dy = -1; dy <= 1; dy++) for(let dx = -1; dx <= 1; dx++){ const X = x+dx, Y = y+dy; if(X >= 0 && Y >= 0 && X < bw && Y < bh) mx = Math.max(mx, a[Y*bw + X]); } t[y*bw + x] = mx; }
+    for(let y = 0; y < bh; y++) for(let x = 0; x < bw; x++){ let mx = 0; for(let dy = -2; dy <= 2; dy++) for(let dx = -2; dx <= 2; dx++){ const X = x+dx, Y = y+dy; if(X >= 0 && Y >= 0 && X < bw && Y < bh) mx = Math.max(mx, a[Y*bw + X]); } t[y*bw + x] = mx; }
     for(let pass = 0; pass < 2; pass++){ const u = new Float32Array(a.length);
       for(let y = 0; y < bh; y++) for(let x = 0; x < bw; x++){ let s = 0, n = 0; for(let dy = -1; dy <= 1; dy++) for(let dx = -1; dx <= 1; dx++){ const X = x+dx, Y = y+dy; if(X >= 0 && Y >= 0 && X < bw && Y < bh){ s += t[Y*bw + X]; n++; } } u[y*bw + x] = s/n; }
       t = u; }
@@ -1274,12 +1287,13 @@ function scClean(c, mode){
       const bi = a => (a[i00]*(1-tx) + a[i10]*tx)*(1-ty) + (a[i01]*(1-tx) + a[i11]*tx)*ty;
       const j = (y*w + x)*4;
       if(mode === 'color'){
-        D[j] = lv(d[j]*255/Math.max(24, bi(sR)), 18, 238, 1.15); D[j+1] = lv(d[j+1]*255/Math.max(24, bi(sG)), 18, 238, 1.15); D[j+2] = lv(d[j+2]*255/Math.max(24, bi(sB)), 18, 238, 1.15);
+        D[j] = lv(d[j]*255/Math.max(24, bi(sR)), 30, 222, 1.2); D[j+1] = lv(d[j+1]*255/Math.max(24, bi(sG)), 30, 222, 1.2); D[j+2] = lv(d[j+2]*255/Math.max(24, bi(sB)), 30, 222, 1.2);
       } else {
         const L = (0.299*d[j] + 0.587*d[j+1] + 0.114*d[j+2]) * 255 / bi(sL);
-        const v = mode === 'bw' ? lv(L, 115, 170, 1) : lv(L, 35, 228, 1.45);
+        const v = mode === 'bw' ? lv(L, 120, 175, 1) : lv(L, 60, 215, 1.3);
         D[j] = D[j+1] = D[j+2] = v;
       }
+      if(AL && AL[y*w + x] < 1){ const a = AL[y*w + x]; D[j] = D[j]*a + 255*(1-a); D[j+1] = D[j+1]*a + 255*(1-a); D[j+2] = D[j+2]*a + 255*(1-a); }
       D[j+3] = 255;
     }
   }
@@ -1322,11 +1336,11 @@ function scEditorHTML(){
   </div>`;
 }
 async function scStart(blob){
-  const S = ui.sc = {blob, src: null, quad: null, rot: 0, mode: 'scan', flat: null, out: null, busy: true, crop: false};
+  const S = ui.sc = {blob, src: null, quad: null, mask: null, rot: 0, mode: 'scan', flat: null, out: null, busy: true, crop: false};
   scPaint();
   try { S.src = await scLoad(blob); } catch(e){ S.busy = false; S.fail = true; scPaint(); return; }
   if(ui.sc !== S) return;
-  S.quad = scDetect(S.src);
+  const det = scDetect(S.src); S.quad = det.q; S.mask = det.mask;
   await scRun();
 }
 async function scRun(){
@@ -1335,8 +1349,8 @@ async function scRun(){
   await new Promise(r => setTimeout(r, 40));
   const t0 = Date.now();
   try {
-    if(!S.flat) S.flat = scRot(scWarp(S.src, S.quad), S.rot);
-    S.out = scClean(S.flat, S.mode);
+    if(!S.flat) S.flat = scWarp(S.src, S.quad, S.mask);
+    S.out = scRot(S.mode === 'orig' ? scWarp(S.src, S.quad, null) : scClean(S.flat, S.mode), S.rot);
   } catch(e){ S.out = scRot(S.src, S.rot); }
   await new Promise(r => setTimeout(r, Math.max(0, 900 - (Date.now() - t0))));
   if(ui.sc !== S) return;
@@ -1382,8 +1396,8 @@ function scAction(k, el){
   const S = ui.sc; if(!S || !S.src || (S.busy && k !== 'sc-zoom')) return;
   if(k==='sc-mode'){ if(S.mode !== el.dataset.m){ S.mode = el.dataset.m; scRun(); } }
   if(k==='sc-rotl' || k==='sc-rotr'){ S.rot = (S.rot + (k==='sc-rotr' ? 90 : 270)) % 360; S.flat = null; scRun(); }
-  if(k==='sc-auto'){ S.quad = scDetect(S.src); S.flat = null; if(S.mode === 'orig') S.mode = 'scan'; scRun(); }
-  if(k==='sc-reset'){ S.quad = scFull(S.src); S.rot = 0; S.mode = 'orig'; S.flat = null; scRun(); }
+  if(k==='sc-auto'){ const det = scDetect(S.src); S.quad = det.q; S.mask = det.mask; S.flat = null; if(S.mode === 'orig') S.mode = 'scan'; scRun(); }
+  if(k==='sc-reset'){ S.quad = scFull(S.src); S.mask = null; S.rot = 0; S.mode = 'orig'; S.flat = null; scRun(); }
   if(k==='sc-crop'){ if(S.crop){ S.crop = false; scPaint(); return; } S.crop = true; S.cq = S.quad.map(([x, y]) => [x / S.src.width, y / S.src.height]); scPaint(); }
   if(k==='sc-cropok'){ S.quad = S.cq.map(([x, y]) => [x*S.src.width, y*S.src.height]); S.flat = null; if(S.mode === 'orig') S.mode = 'scan'; scRun(); }
   if(k==='sc-zoom'){ const r = document.getElementById('scn'); if(r) r.classList.toggle('big'); }
