@@ -1141,6 +1141,254 @@ async function rotateBlob(blob, deg){
   const g = c.getContext('2d'); g.translate(c.width/2, c.height/2); g.rotate(deg * Math.PI / 180); g.drawImage(bmp, -bmp.width/2, -bmp.height/2);
   return await new Promise(res => c.toBlob(b => res(b || blob), 'image/jpeg', 0.88));
 }
+/* ---------- receipt scanner: find the paper, flatten it, clean it ---------- */
+const SC_MAX = 2200;
+const scCanvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+const scCtx = c => c.getContext('2d', {willReadFrequently: true});
+async function scLoad(blob){
+  const bmp = await createImageBitmap(blob);
+  const s = Math.min(1, SC_MAX / Math.max(bmp.width, bmp.height));
+  const c = scCanvas(Math.round(bmp.width*s), Math.round(bmp.height*s));
+  scCtx(c).drawImage(bmp, 0, 0, c.width, c.height); if(bmp.close) bmp.close();
+  return c;
+}
+function scGray(c, maxSide){
+  const s = Math.min(1, maxSide / Math.max(c.width, c.height));
+  const w = Math.max(1, Math.round(c.width*s)), h = Math.max(1, Math.round(c.height*s));
+  const t = scCanvas(w, h), x = scCtx(t); x.drawImage(c, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h).data, g = new Float32Array(w*h);
+  for(let i = 0, j = 0; i < g.length; i++, j += 4) g[i] = 0.299*d[j] + 0.587*d[j+1] + 0.114*d[j+2];
+  return {w, h, g, s};
+}
+function scOtsu(g){
+  const hist = new Float64Array(256); for(let i = 0; i < g.length; i++) hist[g[i] | 0]++;
+  let sum = 0; for(let i = 0; i < 256; i++) sum += i*hist[i];
+  let sB = 0, wB = 0, best = -1, thr = 128; const n = g.length;
+  for(let i = 0; i < 256; i++){ wB += hist[i]; if(!wB) continue; const wF = n - wB; if(!wF) break; sB += i*hist[i];
+    const mB = sB/wB, mF = (sum - sB)/wF, v = wB*wF*(mB - mF)*(mB - mF); if(v > best){ best = v; thr = i; } }
+  return thr;
+}
+const scFull = c => [[0,0],[c.width,0],[c.width,c.height],[0,c.height]];
+// Paper is the biggest bright patch; its four extreme points are the corners.
+function scDetect(c){
+  const full = scFull(c);
+  try {
+    const {w, h, g, s} = scGray(c, 400), thr = scOtsu(g);
+    const m = new Uint8Array(w*h); for(let i = 0; i < m.length; i++) m[i] = g[i] > thr ? 1 : 0;
+    const lab = new Int32Array(w*h).fill(-1), st = new Int32Array(w*h);
+    let L = 0, bestN = 0, bestL = -1, bestEdge = 0;
+    for(let i = 0; i < m.length; i++){
+      if(!m[i] || lab[i] >= 0) continue;
+      let sp = 0, n = 0, edge = 0; st[sp++] = i; lab[i] = L;
+      while(sp){ const p = st[--sp]; n++; const x = p % w, y = (p / w) | 0;
+        if(x === 0 || y === 0 || x === w-1 || y === h-1) edge++;
+        if(x > 0 && m[p-1] && lab[p-1] < 0){ lab[p-1] = L; st[sp++] = p-1; }
+        if(x < w-1 && m[p+1] && lab[p+1] < 0){ lab[p+1] = L; st[sp++] = p+1; }
+        if(y > 0 && m[p-w] && lab[p-w] < 0){ lab[p-w] = L; st[sp++] = p-w; }
+        if(y < h-1 && m[p+w] && lab[p+w] < 0){ lab[p+w] = L; st[sp++] = p+w; } }
+      if(n > bestN){ bestN = n; bestL = L; bestEdge = edge; } L++;
+    }
+    const frac = bestN / (w*h);
+    // Too small, or it fills the frame (paper bigger than photo, or bright background): keep the whole photo.
+    if(bestL < 0 || frac < 0.06 || frac > 0.93 || bestEdge > 1.2*(w + h)) return full;
+    let tl = [0,0,1e9], tr = [0,0,-1e9], br = [0,0,-1e9], bl = [0,0,1e9];
+    for(let p = 0; p < lab.length; p++){ if(lab[p] !== bestL) continue; const x = p % w, y = (p / w) | 0, a = x + y, b = x - y;
+      if(a < tl[2]) tl = [x,y,a]; if(a > br[2]) br = [x,y,a]; if(b > tr[2]) tr = [x,y,b]; if(b < bl[2]) bl = [x,y,b]; }
+    const k = 1 / s, cl = (v, mx) => Math.min(mx, Math.max(0, v));
+    const q = [tl, tr, br, bl].map(([x, y]) => [cl((x + .5)*k, c.width), cl((y + .5)*k, c.height)]);
+    const area = Math.abs(q.reduce((a, [x, y], i) => { const [X, Y] = q[(i+1) % 4]; return a + x*Y - X*y; }, 0)) / 2;
+    if(area < 0.06*c.width*c.height) return full;
+    // pull each corner in a hair so no table shows at the paper edge
+    const cx = q.reduce((a, p) => a + p[0], 0)/4, cy = q.reduce((a, p) => a + p[1], 0)/4;
+    return q.map(([x, y]) => [cl(x - (x - cx)*.006, c.width), cl(y - (y - cy)*.006, c.height)]);
+  } catch(e){ return full; }
+}
+function scHomog(src, dst){ // maps dst points onto src points
+  const A = [], B = [];
+  for(let i = 0; i < 4; i++){ const [x, y] = dst[i], [u, v] = src[i];
+    A.push([x, y, 1, 0, 0, 0, -u*x, -u*y]); B.push(u); A.push([0, 0, 0, x, y, 1, -v*x, -v*y]); B.push(v); }
+  for(let i = 0; i < 8; i++){
+    let mx = i; for(let r = i+1; r < 8; r++) if(Math.abs(A[r][i]) > Math.abs(A[mx][i])) mx = r;
+    [A[i], A[mx]] = [A[mx], A[i]]; [B[i], B[mx]] = [B[mx], B[i]];
+    const p = A[i][i] || 1e-12;
+    for(let r = 0; r < 8; r++){ if(r === i) continue; const f = A[r][i] / p; if(!f) continue; for(let k = i; k < 8; k++) A[r][k] -= f*A[i][k]; B[r] -= f*B[i]; }
+  }
+  const hm = B.map((b, i) => b / (A[i][i] || 1e-12)); hm.push(1); return hm;
+}
+const scIsFull = (c, q) => q[0][0] <= 1 && q[0][1] <= 1 && q[1][0] >= c.width-1 && q[1][1] <= 1 && q[2][0] >= c.width-1 && q[2][1] >= c.height-1 && q[3][0] <= 1 && q[3][1] >= c.height-1;
+function scWarp(c, q){
+  const d = (a, b) => Math.hypot(a[0]-b[0], a[1]-b[1]);
+  let W = Math.max(d(q[0], q[1]), d(q[3], q[2])), H = Math.max(d(q[0], q[3]), d(q[1], q[2]));
+  const s = Math.min(1, 2000 / Math.max(W, H)); W = Math.max(8, Math.round(W*s)); H = Math.max(8, Math.round(H*s));
+  const o = scCanvas(W, H), ox = scCtx(o);
+  if(scIsFull(c, q)){ ox.drawImage(c, 0, 0, W, H); return o; }
+  const sw = c.width, sh = c.height, sd = scCtx(c).getImageData(0, 0, sw, sh).data;
+  const od = ox.createImageData(W, H), D = od.data, hm = scHomog(q, [[0,0],[W,0],[W,H],[0,H]]);
+  for(let y = 0; y < H; y++) for(let x = 0; x < W; x++){
+    const z = hm[6]*x + hm[7]*y + 1, u = (hm[0]*x + hm[1]*y + hm[2]) / z, v = (hm[3]*x + hm[4]*y + hm[5]) / z;
+    const x0 = Math.max(0, Math.min(sw-2, Math.floor(u))), y0 = Math.max(0, Math.min(sh-2, Math.floor(v)));
+    const fx = Math.max(0, Math.min(1, u - x0)), fy = Math.max(0, Math.min(1, v - y0));
+    const i00 = (y0*sw + x0)*4, i10 = i00 + 4, i01 = i00 + sw*4, i11 = i01 + 4, j = (y*W + x)*4;
+    for(let k = 0; k < 3; k++) D[j+k] = (sd[i00+k]*(1-fx) + sd[i10+k]*fx)*(1-fy) + (sd[i01+k]*(1-fx) + sd[i11+k]*fx)*fy;
+    D[j+3] = 255;
+  }
+  ox.putImageData(od, 0, 0); return o;
+}
+function scRot(c, deg){
+  deg = ((deg % 360) + 360) % 360; if(!deg) return c;
+  const q = deg % 180 !== 0, o = scCanvas(q ? c.height : c.width, q ? c.width : c.height), x = scCtx(o);
+  x.translate(o.width/2, o.height/2); x.rotate(deg*Math.PI/180); x.drawImage(c, -c.width/2, -c.height/2); return o;
+}
+// Even out shadows and creases: estimate the paper brightness in blocks, divide it out, then set levels.
+function scClean(c, mode){
+  if(mode === 'orig') return c;
+  const w = c.width, h = c.height, src = scCtx(c).getImageData(0, 0, w, h), d = src.data;
+  const B = Math.max(10, Math.round(Math.max(w, h) / 40)), bw = Math.ceil(w / B), bh = Math.ceil(h / B);
+  const bgL = new Float32Array(bw*bh), bgR = new Float32Array(bw*bh), bgG = new Float32Array(bw*bh), bgB = new Float32Array(bw*bh);
+  const hist = new Uint32Array(256);
+  for(let by = 0; by < bh; by++) for(let bx = 0; bx < bw; bx++){
+    hist.fill(0); let n = 0;
+    const x1 = Math.min(w, (bx+1)*B), y1 = Math.min(h, (by+1)*B);
+    for(let y = by*B; y < y1; y += 2) for(let x = bx*B; x < x1; x += 2){ const j = (y*w + x)*4; hist[(0.299*d[j] + 0.587*d[j+1] + 0.114*d[j+2]) | 0]++; n++; }
+    let cut = n*0.1, v = 255; for(; v > 0; v--){ cut -= hist[v]; if(cut <= 0) break; }
+    let r = 0, g = 0, b = 0, m = 0;
+    for(let y = by*B; y < y1; y += 2) for(let x = bx*B; x < x1; x += 2){ const j = (y*w + x)*4; if(0.299*d[j] + 0.587*d[j+1] + 0.114*d[j+2] >= v){ r += d[j]; g += d[j+1]; b += d[j+2]; m++; } }
+    const k = by*bw + bx; bgL[k] = Math.max(v, 24); bgR[k] = m ? r/m : v; bgG[k] = m ? g/m : v; bgB[k] = m ? b/m : v;
+  }
+  const smooth = a => { // max 3x3 (bridges dense text), then two box blurs
+    let t = new Float32Array(a.length);
+    for(let y = 0; y < bh; y++) for(let x = 0; x < bw; x++){ let mx = 0; for(let dy = -1; dy <= 1; dy++) for(let dx = -1; dx <= 1; dx++){ const X = x+dx, Y = y+dy; if(X >= 0 && Y >= 0 && X < bw && Y < bh) mx = Math.max(mx, a[Y*bw + X]); } t[y*bw + x] = mx; }
+    for(let pass = 0; pass < 2; pass++){ const u = new Float32Array(a.length);
+      for(let y = 0; y < bh; y++) for(let x = 0; x < bw; x++){ let s = 0, n = 0; for(let dy = -1; dy <= 1; dy++) for(let dx = -1; dx <= 1; dx++){ const X = x+dx, Y = y+dy; if(X >= 0 && Y >= 0 && X < bw && Y < bh){ s += t[Y*bw + X]; n++; } } u[y*bw + x] = s/n; }
+      t = u; }
+    return t;
+  };
+  const sL = smooth(bgL), sR = smooth(bgR), sG = smooth(bgG), sB = smooth(bgB);
+  const o = scCanvas(w, h), ox = scCtx(o), out = ox.createImageData(w, h), D = out.data;
+  const lv = (v, lo, hi, gm) => { v = (v - lo) / (hi - lo); v = v < 0 ? 0 : v > 1 ? 1 : v; return 255*Math.pow(v, gm); };
+  for(let y = 0; y < h; y++){
+    const fy = Math.max(0, Math.min(bh - 1.001, y/B - .5)), y0 = fy | 0, ty = fy - y0;
+    for(let x = 0; x < w; x++){
+      const fx = Math.max(0, Math.min(bw - 1.001, x/B - .5)), x0 = fx | 0, tx = fx - x0;
+      const i00 = y0*bw + x0, i10 = Math.min(i00 + 1, y0*bw + bw - 1), i01 = Math.min(i00 + bw, bw*bh - 1), i11 = Math.min(i01 + 1, bw*bh - 1);
+      const bi = a => (a[i00]*(1-tx) + a[i10]*tx)*(1-ty) + (a[i01]*(1-tx) + a[i11]*tx)*ty;
+      const j = (y*w + x)*4;
+      if(mode === 'color'){
+        D[j] = lv(d[j]*255/Math.max(24, bi(sR)), 18, 238, 1.15); D[j+1] = lv(d[j+1]*255/Math.max(24, bi(sG)), 18, 238, 1.15); D[j+2] = lv(d[j+2]*255/Math.max(24, bi(sB)), 18, 238, 1.15);
+      } else {
+        const L = (0.299*d[j] + 0.587*d[j+1] + 0.114*d[j+2]) * 255 / bi(sL);
+        const v = mode === 'bw' ? lv(L, 115, 170, 1) : lv(L, 35, 228, 1.45);
+        D[j] = D[j+1] = D[j+2] = v;
+      }
+      D[j+3] = 255;
+    }
+  }
+  ox.putImageData(out, 0, 0); return o;
+}
+const SC_MODES = [['scan','Scan'],['bw','B&W'],['color','Colour'],['orig','Original']];
+const SCI = {
+  crop:'<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>',
+  auto:'<path d="m15 4-1 2-2 1 2 1 1 2 1-2 2-1-2-1z"/><path d="M3 21 14 10"/><path d="m19 13-.6 1.4L17 15l1.4.6L19 17l.6-1.4L21 15l-1.4-.6z"/>',
+  rotl:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+  rotr:'<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
+  reset:'<path d="M3 12a9 9 0 1 0 9-9 9.7 9.7 0 0 0-6.7 2.8L3 8"/><path d="M3 3v5h5"/>',
+  zoom:'<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/>',
+  check:'<path d="M20 6 9 17l-5-5"/>'
+};
+const scIco = k => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SCI[k]}</svg>`;
+function scEditorHTML(){
+  return `<div class="scn" id="scn">
+    <div class="scn-rail l">
+      <button type="button" class="ib" data-act="sc-crop" title="Adjust corners" aria-label="Adjust corners">${scIco('crop')}</button>
+      <button type="button" class="ib" data-act="sc-auto" title="Auto detect &amp; clean" aria-label="Auto detect and clean">${scIco('auto')}</button>
+      <button type="button" class="ib" data-act="sc-rotl" title="Rotate left" aria-label="Rotate left">${scIco('rotl')}</button>
+      <button type="button" class="ib" data-act="sc-rotr" title="Rotate right" aria-label="Rotate right">${scIco('rotr')}</button>
+    </div>
+    <div class="scn-stage"><i class="dx-c tl"></i><i class="dx-c tr"></i><i class="dx-c bl"></i><i class="dx-c br"></i>
+      <div class="scn-view"><canvas id="scn-cv" aria-label="Cleaned receipt"></canvas></div>
+      <div class="scn-crop" hidden></div>
+      <i class="scn-beam" aria-hidden="true"></i>
+      <div class="scn-wait">Loading photo…</div>
+    </div>
+    <div class="scn-rail r">
+      <button type="button" class="ib" data-act="sc-reset" title="Back to original photo" aria-label="Back to original photo">${scIco('reset')}</button>
+      <button type="button" class="ib" data-act="sc-zoom" title="View full size" aria-label="View full size">${scIco('zoom')}</button>
+    </div>
+    <div class="scn-bar">
+      <div class="scn-modes" role="radiogroup" aria-label="Look">${SC_MODES.map(([k, l]) => `<button type="button" role="radio" data-act="sc-mode" data-m="${k}">${l}</button>`).join('')}</div>
+      <button type="button" class="btn sm pri scn-done" data-act="sc-cropok" hidden>${scIco('check')} Apply corners</button>
+      <span class="scn-cap" id="scn-cap"></span>
+    </div>
+  </div>`;
+}
+async function scStart(blob){
+  const S = ui.sc = {blob, src: null, quad: null, rot: 0, mode: 'scan', flat: null, out: null, busy: true, crop: false};
+  scPaint();
+  try { S.src = await scLoad(blob); } catch(e){ S.busy = false; S.fail = true; scPaint(); return; }
+  if(ui.sc !== S) return;
+  S.quad = scDetect(S.src);
+  await scRun();
+}
+async function scRun(){
+  const S = ui.sc; if(!S || !S.src) return;
+  S.busy = true; S.crop = false; scPaint();
+  await new Promise(r => setTimeout(r, 40));
+  const t0 = Date.now();
+  try {
+    if(!S.flat) S.flat = scRot(scWarp(S.src, S.quad), S.rot);
+    S.out = scClean(S.flat, S.mode);
+  } catch(e){ S.out = scRot(S.src, S.rot); }
+  await new Promise(r => setTimeout(r, Math.max(0, 900 - (Date.now() - t0))));
+  if(ui.sc !== S) return;
+  S.busy = false; scPaint();
+}
+function scPaint(){
+  const S = ui.sc, root = document.getElementById('scn'); if(!S || !root) return;
+  root.classList.toggle('busy', !!S.busy); root.classList.toggle('cropping', !!S.crop);
+  const wait = root.querySelector('.scn-wait'); wait.hidden = !(S.busy && !S.out) && !S.fail; wait.textContent = S.fail ? "This photo can't be opened here. It will be saved as it is." : 'Finding the receipt…';
+  root.querySelectorAll('[data-act=sc-mode]').forEach(b => { const on = b.dataset.m === S.mode; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+  root.querySelector('.scn-done').hidden = !S.crop; root.querySelector('.scn-modes').hidden = !!S.crop;
+  const cv = document.getElementById('scn-cv');
+  if(S.out && cv && cv._src !== S.out){ cv.width = S.out.width; cv.height = S.out.height; cv.getContext('2d').drawImage(S.out, 0, 0); cv._src = S.out; }
+  if(cv) cv.style.visibility = S.out ? '' : 'hidden';
+  const cap = document.getElementById('scn-cap');
+  if(cap) cap.textContent = S.crop ? 'Drag the 4 corners onto the receipt edges' : S.out ? `${(SC_MODES.find(m => m[0]===S.mode) || [,''])[1]} · ${S.out.width}×${S.out.height}` : '';
+  const cr = root.querySelector('.scn-crop');
+  cr.hidden = !S.crop;
+  if(S.crop && S.src){
+    if(!S.srcUrl) S.srcUrl = S.src.toDataURL('image/jpeg', .8);
+    if(!cr.firstChild) cr.innerHTML = `<div class="cw"><img src="${S.srcUrl}" alt="Original photo"><svg viewBox="0 0 1 1" preserveAspectRatio="none"><polygon/></svg>${[0,1,2,3].map(i => `<b class="scn-h" data-h="${i}" aria-label="Corner ${i+1}"></b>`).join('')}</div>`;
+    scCropDraw();
+  } else cr.innerHTML = '';
+}
+function scCropDraw(){
+  const S = ui.sc, cr = document.querySelector('#scn .scn-crop'); if(!S || !cr || !S.src) return;
+  const n = S.cq; cr.querySelector('polygon').setAttribute('points', n.map(p => p.join(',')).join(' '));
+  cr.querySelectorAll('.scn-h').forEach(b => { const p = n[+b.dataset.h]; b.style.left = p[0]*100 + '%'; b.style.top = p[1]*100 + '%'; });
+}
+async function scBlob(){
+  const S = ui.sc; if(!S || !S.out) return null;
+  return await new Promise(res => S.out.toBlob(b => res(b), 'image/jpeg', .9));
+}
+const scEdited = S => S && S.src && (S.mode !== 'orig' || S.rot || !scIsFull(S.src, S.quad));
+document.addEventListener('pointerdown', ev => {
+  const h = ev.target.closest && ev.target.closest('.scn-h'); if(!h || !ui.sc) return;
+  ev.preventDefault(); const i = +h.dataset.h, box = h.parentElement; h.setPointerCapture(ev.pointerId);
+  const mv = e => { const r = box.getBoundingClientRect(); ui.sc.cq[i] = [Math.min(1, Math.max(0, (e.clientX - r.left)/r.width)), Math.min(1, Math.max(0, (e.clientY - r.top)/r.height))]; scCropDraw(); };
+  const up = () => { h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); };
+  h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+});
+function scAction(k, el){
+  const S = ui.sc; if(!S || !S.src || (S.busy && k !== 'sc-zoom')) return;
+  if(k==='sc-mode'){ if(S.mode !== el.dataset.m){ S.mode = el.dataset.m; scRun(); } }
+  if(k==='sc-rotl' || k==='sc-rotr'){ S.rot = (S.rot + (k==='sc-rotr' ? 90 : 270)) % 360; S.flat = null; scRun(); }
+  if(k==='sc-auto'){ S.quad = scDetect(S.src); S.flat = null; if(S.mode === 'orig') S.mode = 'scan'; scRun(); }
+  if(k==='sc-reset'){ S.quad = scFull(S.src); S.rot = 0; S.mode = 'orig'; S.flat = null; scRun(); }
+  if(k==='sc-crop'){ if(S.crop){ S.crop = false; scPaint(); return; } S.crop = true; S.cq = S.quad.map(([x, y]) => [x / S.src.width, y / S.src.height]); scPaint(); }
+  if(k==='sc-cropok'){ S.quad = S.cq.map(([x, y]) => [x*S.src.width, y*S.src.height]); S.flat = null; if(S.mode === 'orig') S.mode = 'scan'; scRun(); }
+  if(k==='sc-zoom'){ const r = document.getElementById('scn'); if(r) r.classList.toggle('big'); }
+}
+
 const numOrNull = x => (x===null || x===undefined || x==='' || isNaN(Number(x))) ? null : Math.round(Number(x)*100)/100;
 async function scanReceipt(file){
   if(!file || !sample) return;
@@ -1162,7 +1410,7 @@ If this is not a receipt or the total is unclear, reply {"amount": null}.`, {ima
     const items = ok ? (Array.isArray(r.items) ? r.items : []).slice(0,30)
       .map(x => ({name:String(x && x.name || '').slice(0,80), qty:numOrNull(x && x.qty), price:numOrNull(x && x.price)}))
       .filter(x => x.name) : [];
-    const pend = {blob:img, receipt: ok ? {merchant:String(r.merchant||'').slice(0,80), no:String(r.receiptNo||'').slice(0,40), time:/^\d{2}:\d{2}$/.test(r.time||'')?r.time:'',
+    const pend = {blob:img, file, receipt: ok ? {merchant:String(r.merchant||'').slice(0,80), no:String(r.receiptNo||'').slice(0,40), time:/^\d{2}:\d{2}$/.test(r.time||'')?r.time:'',
       items, subtotal:numOrNull(r.subtotal), discount:numOrNull(r.discount), tax:numOrNull(r.tax)} : {}};
     if(ok && !r.note && r.merchant) r.note = r.merchant;
     openRecord(pend, ok ? r : {});
@@ -1257,9 +1505,7 @@ function openRecord(pend, r){
   m.innerHTML = `<div class="sheet wide rec" role="dialog" aria-modal="true" aria-label="Record expense">
     <div class="rec-h"><h2>Record expense</h2><button type="button" class="dt-x" data-act="close" aria-label="Close">×</button></div>
     <div class="rec-g">
-      ${pend ? `<div class="rec-img"><i class="dx-c tl"></i><i class="dx-c tr"></i><i class="dx-c bl"></i><i class="dx-c br"></i>
-        <div class="rec-pic"><img id="rec-img" src="${pend.url}" alt="Receipt photo"></div>
-        <div class="rec-tools"><button type="button" class="ib" data-act="rec-rot" aria-label="Rotate" title="Rotate">↻</button><button type="button" class="ib" data-act="rec-zoom" aria-label="View full size" title="View full size">⤢</button></div></div>` : ''}
+      ${pend ? scEditorHTML() : ''}
       <form id="f-rec" class="rec-f" autocomplete="off">
         <label class="lb">Payee<input class="f" id="rec-payee" value="${esc(r.merchant || '')}" placeholder="Shop or company"></label>
         <label class="lb"><span>Amount (RM) <b class="req">*</b></span><input class="f amtin" id="rec-amt" type="number" inputmode="decimal" step="0.01" min="0" value="${Number(r.amount) > 0 ? Number(r.amount).toFixed(2) : ''}" required></label>
@@ -1271,13 +1517,14 @@ function openRecord(pend, r){
         ${byKind('vehicle').length ? `<label class="lb">Vehicle (optional)<select class="f" id="rec-vid"><option value="">—</option>${byKind('vehicle').map(x => `<option value="${x.id}">${esc(x.name)}${x.plate ? ' · ' + esc(x.plate) : ''}</option>`).join('')}</select></label><label class="lb">Odometer (km)<input class="f" id="rec-km" type="number" inputmode="numeric" min="0" placeholder="optional"></label>` : ''}
         <label class="lb full">What for<input class="f" id="rec-note" value="${esc(String(r.note || '').slice(0,120))}" placeholder="e.g. fuel, lunch with client"></label>
         <div class="lb full">Document number<div class="docno" id="rec-doc"></div></div>
-        ${pend ? `<div class="rec-file full"><span class="fi">🖼</span><div><b id="rec-fn"></b><span>${pend.blob.type==='image/png'?'PNG':'JPEG'} · ${kbTxt(pend.blob.size)}</span></div></div>` : ''}
+        ${pend ? `<div class="rec-file full"><span class="fi">🖼</span><div><b id="rec-fn"></b><span>Saved as a cleaned scan · original photo kept</span></div></div>` : ''}
         ${its.length ? `<details class="full rec-items"><summary>${its.length} item${its.length>1?'s':''} on the receipt</summary><table>${its.map(x => `<tr><td>${esc(x.name)}${x.qty?` <span class="muted">×${esc(x.qty)}</span>`:''}</td><td class="n">${x.price!=null?fix2(x.price):''}</td></tr>`).join('')}</table></details>` : ''}
         <div class="full rec-acts"><button type="button" class="btn" data-act="close">Cancel</button><button type="submit" class="btn pri">💾 Save expense</button></div>
       </form>
     </div></div>`;
   m.hidden = false;
   recSync();
+  if(pend) scStart(pend.file || pend.blob); else ui.sc = null;
 }
 function recSync(){
   const el = id => document.getElementById(id); if(!el('f-rec')) return;
@@ -1285,7 +1532,7 @@ function recSync(){
   const scope = (document.querySelector('input[name=rec-scope]:checked') || {}).value || 'peribadi';
   const doc = nextDocNo(scope, el('rec-date').value || today(), el('rec-code').value);
   el('rec-doc').innerHTML = docChips(doc);
-  if(el('rec-fn') && ui.rec.pend) el('rec-fn').textContent = doc + '.' + extOf(ui.rec.pend.blob.type);
+  if(el('rec-fn') && ui.rec.pend) el('rec-fn').textContent = doc + '.jpg';
 }
 document.addEventListener('input', ev => {
   const T = ev.target; if(!T.closest || !T.closest('#f-rec')) return;
@@ -1323,36 +1570,74 @@ async function receiptsZip(month){
 
 function openVoucher(e){
   if(!e) return;
-  editing = null;
+  editing = null; ui.sc = null;
   const biz = scopeOf(e)==='bisnes', r = e.receipt || {}, its = itemsOf(e), hasQty = its.some(x => x.qty);
+  const veh = e.vid ? get(e.vid) : null;
+  const rows = [
+    ['Date', longDate(e.date) + (r.time ? ' · ' + r.time : '')],
+    ['Paid to', r.merchant || e.note || '-'],
+    ['What for', e.note && e.note !== r.merchant ? e.note : ''],
+    ['Category', catName(e.cat)],
+    ['Paid with', methodName(e.method) || '-'],
+    ['Type', biz ? 'Business (' + ORG + ')' : 'Personal'],
+    ['Receipt no.', r.no || ''],
+    ['Vehicle', veh ? veh.name + (veh.plate ? ' · ' + veh.plate : '') + (e.km ? ' · ' + Number(e.km).toLocaleString('en-MY') + ' km' : '') : '']
+  ].filter(x => x[1]);
   const m = $('#modal');
-  m.innerHTML = `<div class="sheet wide" role="dialog" aria-modal="true" aria-label="Formal record">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2>Formal record</h2>
-      <div class="inline">${downloads?'<button class="btn sm pri" data-act="vch-pdf">Download PDF</button>':''}<button class="btn sm" data-act="vch-edit">Edit details</button><button class="btn ghost sm" data-act="close">Close</button></div></div>
-    <div class="vch">
-      <div class="vh"><div><div class="org">${biz ? esc(ORG) : 'Personal Record'}</div><div class="small muted">${biz ? 'Company expense' : 'Personal expense'}</div></div>
-        <div><div class="doc">${biz ? 'Expense Voucher' : 'Expense Record'}</div><div class="ref">${esc(docOf(e))}</div></div></div>
-      <dl>
-        <dt>Date</dt><dd>${esc(longDate(e.date))}${r.time?' · '+esc(r.time):''}</dd>
-        <dt>Paid to</dt><dd>${esc(r.merchant || e.note || '-')}</dd>
-        ${r.no ? `<dt>Original receipt no.</dt><dd class="mono">${esc(r.no)}</dd>` : ''}
-        <dt>Category</dt><dd>${esc(catName(e.cat))}</dd>
-        <dt>Payment method</dt><dd>${esc(methodName(e.method) || '-')}</dd>
-      </dl>
-      <div class="tw"><table>
-        <thead><tr><th>Details</th>${hasQty?'<th class="n">Qty</th>':''}<th class="n">Amount (RM)</th></tr></thead>
-        <tbody>${its.map(x => `<tr><td>${esc(x.name)}</td>${hasQty?`<td class="n">${x.qty!=null?esc(x.qty):''}</td>`:''}<td class="n">${x.price!=null?fix2(x.price):''}</td></tr>`).join('')}</tbody>
-        <tfoot>${totalsOf(e).map(([k,v]) => `<tr><td ${hasQty?'colspan="2"':''} class="muted">${k}</td><td class="n">${fix2(v)}</td></tr>`).join('')}
-          <tr class="tot"><td ${hasQty?'colspan="2"':''}>Total paid</td><td class="n">${fix2(e.amount)}</td></tr></tfoot>
-      </table></div>
-      <div class="words">${esc(rmWords(e.amount))}</div>
-      ${biz ? '<div class="sig"><div>Prepared by</div><div>Approved by</div></div>' : ''}
-      ${e.receiptId ? `<div class="rec-file vf"><span class="fi">🖼</span><div><b>${esc(e.receiptName || docOf(e) + '.jpg')}</b><span>Original receipt</span></div>${downloads ? '<button type="button" class="btn sm" data-act="vch-img">Download</button>' : ''}</div>` : ''}
-      ${e.receiptId ? `<div class="att"><h4>Attachment: original receipt</h4><img src="/_blob/${esc(e.receiptId)}" alt="Original receipt photo" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'small muted',textContent:"The receipt photo can't be shown in this view."}))"></div>` : ''}
-      <div class="fn">This internal document was prepared from ${e.receiptId ? 'the attached original receipt' : 'an expense record'} and is not an official receipt from the merchant. ${e.receiptId ? 'Keep the original receipt for claims and tax reference.' : 'Attach the original receipt, if any, for tax claims.'}</div>
+  m.innerHTML = `<div class="sheet wide rv" role="dialog" aria-modal="true" aria-label="Receipt">
+    <div class="rec-h"><h2>Receipt</h2><button type="button" class="dt-x" data-act="close" aria-label="Close">×</button></div>
+    <div class="rv-g">
+      <div class="rv-img">${e.receiptId
+        ? `<img src="/_blob/${esc(e.receiptId)}" alt="Receipt ${esc(docOf(e))}" data-act="rv-zoom" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'small muted rv-none',textContent:&quot;The receipt photo can't be shown right now.&quot;}))">`
+        : `<div class="rv-none"><span class="fi">🧾</span><b>No receipt photo yet</b><span class="small muted">Snap or pick the receipt and it will be cleaned up like a scan.</span>
+            ${canImg ? `<label class="btn pri sm"><input type="file" id="rv-file" accept="image/*" hidden>Add receipt photo</label>` : ''}</div>`}</div>
+      <div class="rv-d">
+        <div class="docno">${docChips(docOf(e))}</div>
+        <div class="rv-amt">${money(e.amount)}</div>
+        <dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+        ${its.length ? `<details class="rec-items"><summary>${its.length} item${its.length>1?'s':''} on the receipt</summary><table>${its.map(x => `<tr><td>${esc(x.name)}${hasQty && x.qty ? ` <span class="muted">×${esc(x.qty)}</span>` : ''}</td><td class="n">${x.price!=null?fix2(x.price):''}</td></tr>`).join('')}</table></details>` : ''}
+        ${e.receiptId ? `<div class="rec-file"><span class="fi">🖼</span><div><b>${esc(e.receiptName || docOf(e) + '.jpg')}</b><span>${e.origId ? 'Cleaned scan · original photo kept' : 'Receipt photo'}</span></div></div>` : ''}
+        <div class="rv-acts">
+          ${e.receiptId && downloads ? '<button type="button" class="btn pri" data-act="vch-img">⬇ Download receipt</button>' : ''}
+          ${e.receiptId && canImg ? '<button type="button" class="btn" data-act="rv-scan">✨ Clean up again</button>' : ''}
+          <button type="button" class="btn" data-act="vch-edit">Edit details</button>
+          ${biz && downloads ? '<button type="button" class="btn ghost" data-act="vch-pdf">Claim voucher (PDF)</button>' : ''}
+        </div>
+      </div>
     </div></div>`;
   m.dataset.vid = e.id;
   m.hidden = false;
+}
+async function openScanSheet(e, file){
+  const m = $('#modal'); ui.sc = null;
+  m.innerHTML = `<div class="sheet wide rec scs" role="dialog" aria-modal="true" aria-label="Clean up receipt">
+    <div class="rec-h"><h2>Clean up receipt</h2><button type="button" class="dt-x" data-act="scs-cancel" aria-label="Close">×</button></div>
+    <div class="small muted">${esc(docOf(e))} · ${money(e.amount)}</div>
+    ${scEditorHTML()}
+    <div class="rec-acts"><button type="button" class="btn" data-act="scs-cancel">Cancel</button><button type="button" class="btn pri" data-act="scs-ok">💾 Save receipt</button></div>
+  </div>`;
+  m.dataset.vid = e.id; m.hidden = false;
+  let blob = file || null;
+  if(!blob){ try { const r = await fetch('/_blob/' + (e.origId || e.receiptId)); if(!r.ok) throw 0; blob = await r.blob(); } catch(err){ toast("Couldn't open the receipt photo."); openVoucher(e); return; } }
+  ui.scFile = file ? await shrinkImage(file) : null;
+  await scStart(blob);
+}
+async function scSheetSave(){
+  const e = get($('#modal').dataset.vid), S = ui.sc; if(!e || !S || S.busy || !assets) return;
+  const btn = document.querySelector('[data-act=scs-ok]'); if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const blob = (await scBlob()) || S.blob;
+    const up = await assets.upload(blob, {type: 'image/jpeg'});
+    const patch = {receiptId: up.id, receiptName: docOf(e) + '.jpg'};
+    if(ui.scFile){ const uo = await assets.upload(ui.scFile, {type: ui.scFile.type==='image/png' ? 'image/png' : 'image/jpeg'}); patch.origId = uo.id; }
+    else if(!e.origId) patch.origId = e.receiptId; // the old photo becomes the kept original
+    else if(e.receiptId && e.receiptId !== e.origId){ try { await assets.delete(e.receiptId); } catch(err){} }
+    if(!e.docNo) patch.docNo = docOf(e);
+    await updItem(e.id, patch);
+    ui.sc = null; ui.scFile = null;
+    toast('Receipt saved · ' + docOf(e));
+    openVoucher({...e, ...patch, ...(get(e.id) && get(e.id).receiptId === patch.receiptId ? get(e.id) : {})}); render();
+  } catch(err){ if(btn){ btn.disabled = false; btn.textContent = '💾 Save receipt'; } toast("Couldn't save the receipt. Try again."); }
 }
 let jsPdfP = null;
 function loadJsPdf(){
@@ -2485,7 +2770,7 @@ function openEditor(i, edit){
   m.hidden = false;
   if(matchMedia('(pointer: fine)').matches){ const first = m.querySelector('input.f,textarea.f'); if(first) first.focus(); }
 }
-function closeEditor(){ $('#modal').hidden = true; $('#modal').innerHTML = ''; editing = null; ui.voice.open = false; if(rec) try { rec.stop(); } catch(e){} }
+function closeEditor(){ $('#modal').hidden = true; $('#modal').innerHTML = ''; editing = null; ui.sc = null; ui.voice.open = false; if(rec) try { rec.stop(); } catch(e){} }
 function micToggle(){
   if(!SR) return;
   if(rec){ try { rec.stop(); } catch(e){} return; }
@@ -3021,7 +3306,12 @@ document.addEventListener('click', async ev => {
     } catch(err){
       try { const r = await fetch('/_blob/' + e.receiptId); const b = await r.blob(); await saveBlobAs(b, name); } catch(er){ toast("Couldn't download the receipt."); }
     } } }
+  if(k.startsWith('sc-')){ scAction(k, act); return; }
+  if(k==='rv-scan'){ const e = get($('#modal').dataset.vid); if(e) openScanSheet(e); return; }
+  if(k==='scs-cancel'){ const e = get($('#modal').dataset.vid); ui.sc = null; if(e) openVoucher(e); else closeEditor(); return; }
+  if(k==='scs-ok'){ await scSheetSave(); return; }
   if(k==='rec-rot'){ ui.rec.rot = (ui.rec.rot + 90) % 360; const i = $('#rec-img'); if(i) i.style.transform = `rotate(${ui.rec.rot}deg)`; }
+  if(k==='rv-zoom'){ const i = document.querySelector('.rv-img'); if(i) i.classList.toggle('big'); }
   if(k==='rec-zoom'){ const i = $('#rec-img'); if(i) i.closest('.rec-img').classList.toggle('big'); }
   if(k==='exp-zip') receiptsZip(ui.exp.month);
   if(k==='vch-edit'){ const e = get($('#modal').dataset.vid); closeEditor(); openEditor(e, true); }
@@ -3050,6 +3340,7 @@ document.addEventListener('change', ev => {
   if(T.id==='ml-tone') ui.mail.tone = T.value;
   if(T.matches('[data-goal]')) updItem(T.dataset.goal, {progress:Number(T.value)});
   if(T.id==='ex-file' && T.files && T.files[0]) scanReceipt(T.files[0]);
+  if(T.id==='rv-file' && T.files && T.files[0]){ const e = get($('#modal').dataset.vid); if(e) openScanSheet(e, T.files[0]); }
   if(T.id==='vl-proof'){ const l = $('#vl-proof-l'); if(l) l.textContent = T.files && T.files[0] ? '📷 Receipt attached ✓' : '📷 Receipt (optional)'; }
   if(T.id==='nf-proof'){ const l = $('#nf-proof-l'); if(l) l.textContent = T.files && T.files[0] ? '📷 Proof attached ✓' : '📷 Proof (optional)'; }
   if((T.id==='pic-file' || T.id==='pic-file2') && T.files && T.files.length){ const fs = Array.from(T.files); T.value = ''; openPic(fs); }
@@ -3127,16 +3418,19 @@ document.addEventListener('submit', async ev => {
       data.receipt = {...(pend.receipt || {}), merchant: v('rec-payee')};
       if(assets){
         const btn = F.querySelector('[type=submit]'); if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
-        let blob = pend.blob;
-        if(ui.rec.rot){ try { blob = await rotateBlob(blob, ui.rec.rot); } catch(e){} }
-        try { const up = await assets.upload(blob, {type: blob.type==='image/png' ? 'image/png' : 'image/jpeg'}); data.receiptId = up.id; data.receiptName = docNo + '.' + extOf(blob.type); }
+        let blob = pend.blob; const S = ui.sc, edited = scEdited(S);
+        if(S && S.out){ try { blob = (await scBlob()) || blob; } catch(e){} }
+        try {
+          const up = await assets.upload(blob, {type: blob.type==='image/png' ? 'image/png' : 'image/jpeg'}); data.receiptId = up.id; data.receiptName = docNo + '.' + extOf(blob.type);
+          if(edited){ try { const o = await shrinkImage(pend.file || pend.blob); const uo = await assets.upload(o, {type: o.type==='image/png' ? 'image/png' : 'image/jpeg'}); data.origId = uo.id; } catch(e){} }
+        }
         catch(e){ toast(e && e.code==='quota_or_state' ? 'Photo storage is full. Saved without the receipt photo.' : "The receipt photo couldn't be saved. The record was still saved."); }
       }
     } else if(v('rec-payee')) data.receipt = {merchant: v('rec-payee')};
     lastMethod = method; try { localStorage.setItem('pd-method', method); } catch(e){}
     closeEditor();
     if(pend && pend.url) URL.revokeObjectURL(pend.url);
-    ui.rec = null;
+    ui.rec = null; ui.sc = null;
     const nid = await addItem(data);
     if(nid) toast(`Saved · ${docNo}`, {label:'View', fn:() => openVoucher(get(nid) || {id:nid, ...data})});
     render();
