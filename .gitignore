@@ -1,2 +1,4 @@
 node_modules/
 .wrangler/
+android/**/build/
+android/.gradle/

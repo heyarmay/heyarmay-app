@@ -469,6 +469,60 @@ self.addEventListener('notificationclick', e => {
   }));
 });`;
 
+/* ---------------- Widget telefon (app Android) ---------------- */
+async function sha256hex(s){ return [...new Uint8Array(await crypto.subtle.digest('SHA-256', te.encode(s)))].map(b => b.toString(16).padStart(2, '0')).join(''); }
+async function widgetTokens(env){ try { return JSON.parse(await getMeta(env, 'widget_tokens') || '[]'); } catch(e){ return []; } }
+async function widgetAuth(req, env){
+  const m = /^Bearer\s+([A-Za-z0-9_-]{40,})$/.exec(req.headers.get('authorization') || '');
+  if(!m) return false;
+  const h = await sha256hex(m[1]), list = await widgetTokens(env);
+  const hit = list.find(x => x.h === h);
+  if(!hit) return false;
+  if(!hit.last || Date.now() - hit.last > 6 * 3600e3){ hit.last = Date.now(); await setMeta(env, 'widget_tokens', JSON.stringify(list)); }
+  return true;
+}
+async function widgetData(env){
+  const t = todayLocal(), d = nowLocal(), nowHM = pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
+  const tm = addDaysYmd(t, 1);
+  const items = (await allDocs(env, 'items')).map(x => ({id: x.id, ...x.data})).filter(i => !i.example);
+  const by = k => items.filter(i => i.kind === k);
+  const agendaFor = async day => {
+    const a = [];
+    by('event').filter(i => i.date === day).forEach(i => a.push({time: i.start || '', title: i.title || 'Event', sub: i.place || 'Event'}));
+    by('reminder').filter(i => !i.done && String(i.at || '').slice(0, 10) === day).forEach(i => a.push({time: String(i.at).slice(11, 16), title: i.title || 'Reminder', sub: 'Reminder'}));
+    let team = 0;
+    if(env.ARMEDIA_DB){
+      try { const f = await armediaFeed(env, day, day), seen = new Set();
+        f.jobs.filter(j => j.date === day).forEach(j => { if(seen.has(j.shoot)) return; seen.add(j.shoot); team++; a.push({time: j.time || '', title: j.title || 'Team job', sub: 'ARMEDIA team' + (j.location ? ' · ' + j.location : '')}); });
+      } catch(e){}
+    }
+    a.sort((x, y) => (x.time || '99').localeCompare(y.time || '99'));
+    return {a, team};
+  };
+  const today = await agendaFor(t);
+  const left = today.a.filter(x => !x.time || x.time >= nowHM);
+  let next = left[0] ? {...left[0], day: 'Today'} : null, more = Math.max(0, left.length - 1);
+  if(!next){ const tom = await agendaFor(tm); if(tom.a[0]){ next = {...tom.a[0], day: 'Tomorrow'}; more = tom.a.length - 1; } }
+  if(next) next.time = next.time ? hm12(next.time) : 'All day';
+  const tasks = by('task').filter(i => !i.done && ((i.due && i.due <= t) || i.priority === 'tinggi')).length;
+  const invoices = by('payment').filter(i => !i.paid).length;
+  let weather = null;
+  try {
+    let w = await getMeta(env, 'wx_widget'); w = w ? JSON.parse(w) : null;
+    if(!w || Date.now() - w.at > 20 * 60e3){
+      const q = new URLSearchParams({latitude: '3.04', longitude: '101.45', timezone: 'Asia/Kuala_Lumpur', forecast_days: '1', current: 'temperature_2m,weather_code,is_day', daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max'});
+      const r = await (await fetch('https://api.open-meteo.com/v1/forecast?' + q)).json();
+      w = {at: Date.now(), r}; await setMeta(env, 'wx_widget', JSON.stringify(w));
+    }
+    const c = w.r.current || {}, dy = w.r.daily || {};
+    weather = {temp: Math.round(c.temperature_2m), desc: WXT(c.weather_code) || '', code: c.weather_code, day: !!c.is_day, hi: dy.temperature_2m_max ? Math.round(dy.temperature_2m_max[0]) : null, lo: dy.temperature_2m_min ? Math.round(dy.temperature_2m_min[0]) : null, rain: dy.precipitation_probability_max ? dy.precipitation_probability_max[0] : null};
+  } catch(e){}
+  const h = d.getUTCHours(), HARI3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return {greet: (h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening') + ', Amir', date: `${HARI3[d.getUTCDay()]}, ${d.getUTCDate()} ${MON3[d.getUTCMonth()]}`,
+    next, more, tasks, invoices, team: today.team, weather, updated: pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes())};
+}
+function addDaysYmd(s, n){ const x = new Date(s + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); }
+
 /* ---------------- halaman log masuk & akaun ---------------- */
 const PAGE_CSS = `
 @property --ang{syntax:'<angle>';inherits:false;initial-value:0deg}
@@ -617,6 +671,9 @@ function accountPage(user){
 <hr><section class="use" aria-labelledby="nt-h"><h2 id="nt-h">Morning notification</h2>
 <p class="hint" id="nt-s" style="margin:4px 0 12px">Every day at 8:00 am, a notification on this device with today's schedule, team jobs, tasks and weather.</p>
 <div class="nt-b"><button class="go" id="nt-on" type="button" hidden>Turn on for this device</button><button class="ghost" id="nt-test" type="button" hidden>Send a preview now</button><button class="ghost" id="nt-off" type="button" hidden>Turn off on this device</button></div></section>
+<hr><section class="use" aria-labelledby="wd-h"><h2 id="wd-h">Phone widget</h2>
+<p class="hint" id="wd-s" style="margin:4px 0 12px">Shows today's next event, tasks, invoices, team jobs and weather on your Android home screen. Install the Hey Armay Widget app first, then tap Connect on that phone.</p>
+<div class="nt-b"><button class="go" id="wd-on" type="button">Connect widget on this phone</button><button class="ghost" id="wd-off" type="button">Disconnect all widgets</button></div></section>
 <hr><h2 class="pw-h">Change password</h2>
 <form id="f" novalidate>
 <input type="text" name="username" autocomplete="username" value="${safe}" hidden>
@@ -641,6 +698,15 @@ $('#f').addEventListener('submit', async ev => {
   btn.disabled = false; btn.textContent = 'Change password';
 });
 $('#out').addEventListener('click', async () => { await post('/api/auth/logout', {}); location.href = '/'; });
+(function(){
+  const s = $('#wd-s');
+  fetch('/api/widget/status', {credentials:'same-origin', cache:'no-store'}).then(r => r.json()).then(j => { if(j.devices) s.textContent = 'Connected on ' + j.devices + ' device' + (j.devices > 1 ? 's' : '') + (j.last ? ' · last update ' + new Date(j.last).toLocaleString('en-GB', {day:'numeric', month:'short', hour:'numeric', minute:'2-digit'}) : '') + '. Tap Connect again on a new phone.'; }).catch(() => {});
+  $('#wd-on').addEventListener('click', async () => {
+    try { const r = await post('/api/widget/connect', {}); if(!r.link) throw 0; s.textContent = 'Opening the Hey Armay Widget app… If nothing happens, install the app first and try again.'; location.href = /Android/i.test(navigator.userAgent) ? 'intent://connect?' + r.link.split('?')[1] + '#Intent;scheme=heyarmay;package=com.heyarmay.app;end' : r.link; }
+    catch(e){ s.textContent = "Couldn't connect. Try again."; }
+  });
+  $('#wd-off').addEventListener('click', async () => { await post('/api/widget/revoke', {}); s.textContent = 'All widgets disconnected.'; });
+})();
 (function(){
   const s = $('#nt-s'), on = $('#nt-on'), off = $('#nt-off'), tst = $('#nt-test');
   const ok = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
@@ -717,6 +783,11 @@ async function handle(req, env, ctx){
     const bin = Uint8Array.from(atob(PNGS[p]), c => c.charCodeAt(0));
     return new Response(bin, {headers: {'content-type': 'image/png', 'cache-control': 'public, max-age=3600'}});
   }
+  if(p === '/api/widget' && m === 'GET'){
+    await ensureSchema(env);
+    if(!await widgetAuth(req, env)) return J({error: 'token'}, 401);
+    return J(await widgetData(env));
+  }
   if(p === '/sw.js') return new Response(SW_JS, {headers: {'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache'}});
   if(p === '/manifest.webmanifest') return new Response(MANIFEST, {headers: {'content-type': 'application/manifest+json'}});
   if(p === '/icon-192.png' || p === '/icon-512.png') {
@@ -775,6 +846,16 @@ async function handle(req, env, ctx){
     await env.DB.prepare('DELETE FROM sessions').run();
     return J({ok: true}, 200, {'set-cookie': setCookie(await newSession(env))});
   }
+  // Widget telefon: sambung / putus
+  if(p === '/api/widget/connect' && m === 'POST'){
+    const raw = crypto.getRandomValues(new Uint8Array(32)), tok = b64u(raw);
+    const list = (await widgetTokens(env)).slice(-4);
+    list.push({h: await sha256hex(tok), created: Date.now(), last: 0});
+    await setMeta(env, 'widget_tokens', JSON.stringify(list));
+    return J({link: 'heyarmay://connect?t=' + tok});
+  }
+  if(p === '/api/widget/revoke' && m === 'POST'){ await setMeta(env, 'widget_tokens', '[]'); return J({ok: true}); }
+  if(p === '/api/widget/status' && m === 'GET'){ const l = await widgetTokens(env); return J({devices: l.length, last: Math.max(0, ...l.map(x => x.last || 0))}); }
   // Notifikasi pagi (Web Push)
   if(p === '/api/push/key' && m === 'GET') return J({key: (await vapidKeys(env)).pub});
   if(p === '/api/push/sub' && m === 'POST'){

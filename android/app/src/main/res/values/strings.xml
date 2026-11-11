@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Hey Armay Widget</string>
+    <string name="widget_label">Hey Armay · Today</string>
+    <string name="widget_desc">Next event, tasks, invoices, team jobs and weather</string>
+</resources>

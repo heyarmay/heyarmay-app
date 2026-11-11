@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="12dp">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical">
+        <ImageView android:layout_width="56dp" android:layout_height="23dp"
+            android:src="@drawable/logo_white" android:scaleType="fitStart" android:contentDescription="Hey Armay" />
+        <TextView android:id="@+id/date" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:gravity="end" android:text="Today"
+            android:textColor="#FF9AA3C7" android:textSize="12sp" />
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:layout_marginTop="8dp" android:orientation="horizontal" android:gravity="center_vertical">
+        <ImageView android:layout_width="4dp" android:layout_height="match_parent"
+            android:layout_marginEnd="10dp" android:layout_marginTop="4dp" android:layout_marginBottom="4dp"
+            android:src="@drawable/bar" android:scaleType="fitXY" />
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:orientation="vertical">
+            <TextView android:id="@+id/label" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="UP NEXT" android:textColor="#FF5EEAD4" android:textSize="10sp"
+                android:textStyle="bold" android:letterSpacing="0.1" />
+            <TextView android:id="@+id/time" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="—" android:textColor="#FFFFFFFF" android:textSize="24sp" android:textStyle="bold" />
+            <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Loading…" android:textColor="#FFFFFFFF" android:textSize="14sp"
+                android:maxLines="1" android:ellipsize="end" />
+            <TextView android:id="@+id/sub" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="" android:textColor="#FF5EEAD4" android:textSize="12sp"
+                android:maxLines="1" android:ellipsize="end" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="10dp" android:orientation="vertical" android:gravity="end">
+            <TextView android:id="@+id/temp" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="" android:textColor="#FFFFFFFF" android:textSize="26sp" />
+            <TextView android:id="@+id/wx" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:gravity="end" android:text="" android:textColor="#FF9AA3C7" android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="10dp" android:orientation="horizontal">
+        <TextView android:id="@+id/stat_tasks" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:background="@drawable/chip_hot" android:gravity="center"
+            android:paddingTop="6dp" android:paddingBottom="6dp" android:text="–\nTasks"
+            android:textColor="#FFFFFFFF" android:textSize="11sp" />
+        <TextView android:id="@+id/stat_inv" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:layout_marginStart="6dp" android:background="@drawable/chip_bg"
+            android:gravity="center" android:paddingTop="6dp" android:paddingBottom="6dp" android:text="–\nInvoices"
+            android:textColor="#FFFFFFFF" android:textSize="11sp" />
+        <TextView android:id="@+id/stat_team" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:layout_marginStart="6dp" android:background="@drawable/chip_bg"
+            android:gravity="center" android:paddingTop="6dp" android:paddingBottom="6dp" android:text="–\nTeam jobs"
+            android:textColor="#FFFFFFFF" android:textSize="11sp" />
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" android:orientation="horizontal">
+        <TextView android:id="@+id/btn_speak" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="34dp" android:background="@drawable/btn_bg" android:gravity="center"
+            android:text="🎤  Speak" android:textColor="#FFFFFFFF" android:textSize="13sp" android:textStyle="bold" />
+        <TextView android:id="@+id/btn_write" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="34dp" android:layout_marginStart="6dp" android:background="@drawable/btn_bg"
+            android:gravity="center" android:text="✏️  Write" android:textColor="#FFFFFFFF" android:textSize="13sp"
+            android:textStyle="bold" />
+        <TextView android:id="@+id/btn_refresh" android:layout_width="wrap_content" android:minWidth="44dp"
+            android:layout_height="34dp" android:layout_marginStart="6dp" android:background="@drawable/chip_bg"
+            android:gravity="center" android:paddingStart="8dp" android:paddingEnd="8dp" android:text="↻"
+            android:textColor="#FF9AA3C7" android:textSize="11sp" />
+    </LinearLayout>
+</LinearLayout>
