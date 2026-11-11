@@ -392,7 +392,7 @@ const ui = {
 { const d = new Date(); ui.calMonth = new Date(d.getFullYear(), d.getMonth(), 1); }
 
 const NAV = [
-  [null, [['hari-ini','Today'],['tugasan','Tasks'],['kalendar','Calendar'],['team','Team Schedule'],['belanja','Expenses'],['nafkah','Nafkah'],['berat','Weight'],['nota','Notes']]],
+  [null, [['hari-ini','Today'],['tugasan','Tasks'],['kalendar','Calendar'],['team','Team Schedule'],['belanja','Expenses'],['nafkah','Nafkah'],['kenderaan','Vehicles'],['berat','Weight'],['nota','Notes']]],
   ['Work', [['menunggu','Waiting For'],['bayaran','Payments'],['idea','Ideas']]],
   ['Time', [['peringatan','Reminders'],['tarikh','Expiry Dates']]],
   ['Life', [['bil','Bills'],['matlamat','Goals & Habits'],['perjalanan','Trips']]],
@@ -414,6 +414,10 @@ const EXP_CAT = [['makan','Food & drinks'],['transport','Fuel & transport'],['da
 const SCOPE = [['peribadi','Personal'],['bisnes','Business']];
 const METHOD = [['','Payment method'],['tunai','Cash'],['kad','Card'],['ewallet','e-Wallet'],['transfer','Bank transfer']];
 const ORG = 'ARMEDIA';
+const VLOG = [['fuel','Fuel','⛽','FUEL'],['service','Service','🔧','SRVC'],['tyre','Tyres','🛞','TYRE'],['repair','Repair','🛠','RPR'],['wash','Wash','🧽','WASH'],['other','Other','📎','VEH']];
+const VLOG_L = Object.fromEntries(VLOG.map(x => [x[0], x[1]])), VLOG_I = Object.fromEntries(VLOG.map(x => [x[0], x[2]])), VLOG_C = Object.fromEntries(VLOG.map(x => [x[0], x[3]]));
+const plateN = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const fmtKm = n => Number(n).toLocaleString('en-MY') + ' km';
 const NAF_TYPE = [['bulanan','Monthly nafkah'],['tambahan','Extra'],['sekolah','School & education'],['kesihatan','Medical'],['pakaian','Clothing'],['lain','Other']];
 const NAF_METHOD = [['transfer','Bank transfer'],['tunai','Cash'],['ewallet','e-Wallet']];
 const NAF_COLORS = ['#14B8A6','#8B5CF6','#F59E0B','#EC4899'];
@@ -438,11 +442,12 @@ const S = {
   contact:['Contact',[['name','Name','text'],['phone','Phone','tel'],['cat','Category','sel',0,CON_CAT],['label','Label / service type','text'],['notes','Notes','area',1]]],
   template:['Template',[['name','Template name','text',1],['body','Message','area',1]]],
   link:['Link',[['title','Name','text',1],['url','Address (https://…)','url',1],['group','Group','sel',0,LINK_G],['notes','Notes (do not store passwords)','area',1]]],
+  vehicle:['Vehicle',[['name','Name','text'],['plate','Plate','text'],['vtype','Type','sel',0,[['kereta','Car'],['motor','Motorcycle']]],['odo','Odometer (km)','num'],['svcKm','Service every (km)','num'],['svcMonths','Service every (months)','num'],['lastSvcDate','Last service date','date'],['lastSvcKm','Last service at (km)','num'],['notes','Notes','area',1]]],
   nafkah:['Nafkah',[['who','Given to','text'],['amount','Amount (RM)','num'],['date','Date','date'],['type','Type','sel',0,NAF_TYPE],['method','Method','sel',0,NAF_METHOD],['note','Note','text',1]]],
   weight:['Weight',[['kg','Weight (kg)','num'],['date','Date','date'],['note','Note','text',1]]],
   expense:['Expense',[['amount','Amount (RM)','num'],['date','Date','date'],['note','What for','text',1],['cat','Category','sel',0,EXP_CAT],['scope','Type','sel',0,SCOPE],['method','Payment method','sel',0,METHOD]]]
 };
-const nameOf = i => i.kind==='nafkah' ? `Nafkah · ${i.who || ''} · ${money(i.amount)}` : i.kind==='weight' ? `${Number(i.kg).toFixed(1)} kg` : (i.title || i.name || i.client || i.note || 'Untitled');
+const nameOf = i => i.kind==='vehicle' ? `${i.name || 'Vehicle'}${i.plate ? ' · ' + i.plate : ''}` : i.kind==='nafkah' ? `Nafkah · ${i.who || ''} · ${money(i.amount)}` : i.kind==='weight' ? `${Number(i.kg).toFixed(1)} kg` : (i.title || i.name || i.client || i.note || 'Untitled');
 
 /* ---------- storage ---------- */
 function toast(msg, action){
@@ -898,7 +903,7 @@ function vToday(){
   const focus = `<div class="dx-card">${dxHead('target', "Today's focus", tk.length > 4 ? dxMore('tugasan', `+${tk.length - 4} more`) : '')}
     ${tk.length ? `<div class="dx-list">${tk.slice(0,4).map(i => dxTask(i, t)).join('')}</div>` : '<div class="dx-empty">No urgent tasks today.</div>'}</div>`;
 
-  const attn = [...(team.connected ? armLate() : []).map(rowAg), ...missed.sort(byAt).map(rowRem), ...chase.map(rowWait), ...callP.slice(0,3).map(rowPerson)];
+  const attn = [...svcDue().map(({v, s}) => `<a class="row" href="#kenderaan" data-view="kenderaan"><span class="kbar" style="background:var(--${s.level === 'late' ? 'rose' : 'sun'})"></span><div class="rt"><span class="t">🔧 Service ${s.level === 'late' ? 'overdue' : 'due soon'}: ${esc(v.name)}</span><span class="meta"><span>${esc(s.left)}</span><span>${esc(s.text)}</span></span></div></a>`), ...(team.connected ? armLate() : []).map(rowAg), ...missed.sort(byAt).map(rowRem), ...chase.map(rowWait), ...callP.slice(0,3).map(rowPerson)];
   const attnHtml = attn.length ? `<div class="dx-card">${dxHead('bell', 'Needs attention')}<div class="list">${attn.join('')}</div></div>` : '';
   const habitHtml = habits.length ? `<div class="dx-card">${dxHead('checksq', "Today's habits", dxMore('matlamat', 'All'))}<div class="hchips">${habits.map(h=>`<button class="hchip ${h.log&&h.log[t]?'on':''}" data-habit="${h.id}">${esc(h.title)}</button>`).join('')}</div></div>` : '';
 
@@ -1263,6 +1268,7 @@ function openRecord(pend, r){
         <label class="lb">Category<select class="f" id="rec-cat">${EXP_CAT.map(([k,l]) => `<option value="${k}" ${k===cat?'selected':''}>${l}</option>`).join('')}</select></label>
         <label class="lb">Code name<input class="f mono" id="rec-code" value="${codeOf(cat)}" maxlength="8" autocapitalize="characters"></label>
         <div class="lb full">Type<div class="seg" role="radiogroup">${SCOPE.map(([k,l]) => `<label><input type="radio" name="rec-scope" value="${k}" ${k===scope?'checked':''}><span>${l}</span></label>`).join('')}</div></div>
+        ${byKind('vehicle').length ? `<label class="lb">Vehicle (optional)<select class="f" id="rec-vid"><option value="">—</option>${byKind('vehicle').map(x => `<option value="${x.id}">${esc(x.name)}${x.plate ? ' · ' + esc(x.plate) : ''}</option>`).join('')}</select></label><label class="lb">Odometer (km)<input class="f" id="rec-km" type="number" inputmode="numeric" min="0" placeholder="optional"></label>` : ''}
         <label class="lb full">What for<input class="f" id="rec-note" value="${esc(String(r.note || '').slice(0,120))}" placeholder="e.g. fuel, lunch with client"></label>
         <div class="lb full">Document number<div class="docno" id="rec-doc"></div></div>
         ${pend ? `<div class="rec-file full"><span class="fi">🖼</span><div><b id="rec-fn"></b><span>${pend.blob.type==='image/png'?'PNG':'JPEG'} · ${kbTxt(pend.blob.size)}</span></div></div>` : ''}
@@ -1762,6 +1768,138 @@ function weightChart(w){
     </svg><div class="wtip" hidden></div></div>`;
 }
 /* ---------- Nafkah ---------- */
+/* ---------- Carian global ---------- */
+const KLBL = k => k === 'expense' ? 'Expense' : k === 'team' ? 'Team job' : k === 'agenda' ? 'ARMEDIA' : (S[k] ? S[k][0] : k);
+function searchDocs(){
+  const out = [];
+  for(const i of items){
+    if(i.kind === 'nafkahset') continue;
+    const sub = i.kind === 'nafkah' ? fmtD(i.date) : i.kind === 'payment' ? `${money(i.amount)}${i.desc ? ' · ' + i.desc : ''}` : i.kind === 'vehicle' ? (Number(i.odo) > 0 ? fmtKm(i.odo) : '') :
+      i.due ? fmtD(i.due) : i.date ? fmtD(i.date) : i.at ? fmtD(String(i.at).slice(0,10)) : (i.body || i.notes || '').slice(0, 80);
+    out.push({k:i.kind, id:i.id, title:nameOf(i), sub, date:i.date || i.due || String(i.at || '').slice(0,10) || '',
+      txt:[nameOf(i), i.notes, i.body, i.note, i.who, i.client, i.desc, i.place, i.plate, i.rel, i.phone, i.url, i.label, i.amount != null ? fix2(i.amount) : ''].filter(Boolean).join(' ')});
+  }
+  for(const e of exps) out.push({k:'expense', id:e.id, title:e.note || catName(e.cat), sub:`${money(e.amount)} · ${fmtD(e.date)}${e.docNo ? ' · ' + e.docNo : ''}`, date:e.date,
+    txt:[e.note, e.receipt && e.receipt.merchant, e.docNo, catName(e.cat), fix2(e.amount), e.receipt && e.receipt.no, (e.receipt && e.receipt.items || []).map(x => x.name).join(' ')].filter(Boolean).join(' ')});
+  const seen = new Set();
+  for(const j of team.jobs || []){ if(seen.has(j.shoot)) continue; seen.add(j.shoot); out.push({k:'team', id:j.shoot, title:j.title, sub:[j.date ? fmtD(j.date) : '', j.time, j.location].filter(Boolean).join(' · '), date:j.date, href:`${ARM_URL}#/schedule?d=${j.date}`, txt:[j.title, j.location, j.status].join(' ')}); }
+  for(const a of team.agenda || []) out.push({k:'agenda', id:a.id, title:a.title, sub:`${AG_L[a.kind] || a.label} · ${fmtD(a.date)}${a.start ? ' ' + fmtT(a.start) : ''}${a.place ? ' · ' + a.place : ''}`, date:a.date, href:a.link || ARM_URL, txt:[a.title, a.place, a.notes, a.label].join(' ')});
+  return out;
+}
+const hl = (s, words) => { let h = esc(s); for(const w of words){ if(w.length < 2) continue; h = h.replace(new RegExp('(' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig'), '<mark>$1</mark>'); } return h; };
+function searchRun(q){
+  const box = $('#sr-res'); if(!box) return;
+  q = String(q || '').trim().toLowerCase();
+  if(!q){ box.innerHTML = `<div class="sr-hint">Search tasks, notes, receipts, expenses, nafkah, people, vehicles and ARMEDIA jobs.<div class="sr-try">${['VQV355','Cahaya','nasi lemak','invoice','ARM-EX'].map(x => `<button type="button" data-srq="${esc(x)}">${esc(x)}</button>`).join('')}</div></div>`; return; }
+  const words = q.split(/\s+/).filter(Boolean);
+  const res = [];
+  for(const d of searchDocs()){
+    const hay = (d.title + ' ' + d.sub + ' ' + d.txt).toLowerCase();
+    if(!words.every(w => hay.includes(w))) continue;
+    const tl = String(d.title).toLowerCase();
+    res.push({...d, score: tl.startsWith(q) ? 3 : tl.includes(q) ? 2 : 1});
+  }
+  res.sort((a,b) => b.score - a.score || String(b.date).localeCompare(String(a.date)));
+  ui.srRes = res.slice(0, 60);
+  box.innerHTML = res.length ? `<div class="sr-n">${res.length > 60 ? '60+' : res.length} result${res.length === 1 ? '' : 's'}</div>` + ui.srRes.map((d, ix) => `<button type="button" class="sr-row" data-srix="${ix}"><span class="chip ${d.k === 'agenda' ? 'arm' : d.k === 'team' ? 'org' : KCHIP[d.k] || ''}">${esc(KLBL(d.k))}</span>
+      <span class="sr-t">${hl(d.title, words)}</span>${d.sub ? `<span class="sr-s">${hl(d.sub, words)}</span>` : ''}</button>`).join('') : `<div class="sr-hint">Nothing found for “${esc(q)}”.</div>`;
+}
+function openSearch(q){
+  editing = null;
+  const m = $('#modal');
+  m.innerHTML = `<div class="sheet wide sr" role="dialog" aria-modal="true" aria-label="Search">
+    <div class="sr-bar"><span class="sr-ic" aria-hidden="true">🔍</span><input id="sr-in" type="search" placeholder="Search everything…" autocomplete="off" enterkeyhint="search" value="${esc(q || '')}"><button type="button" class="dt-x" data-act="close" aria-label="Close">×</button></div>
+    <div id="sr-res" class="sr-res"></div></div>`;
+  m.hidden = false;
+  searchRun(q);
+  setTimeout(() => { const i = $('#sr-in'); if(i){ i.focus(); i.select(); } }, 30);
+}
+function srOpen(d){
+  if(!d) return;
+  if(d.href){ window.open(d.href, '_blank', 'noopener'); return; }
+  if(d.k === 'expense'){ openVoucher(get(d.id)); return; }
+  const it = get(d.id); if(it) openEditor(it);
+}
+document.addEventListener('input', ev => { if(ev.target && ev.target.id === 'sr-in') searchRun(ev.target.value); });
+document.addEventListener('keydown', ev => {
+  if(ev.target && ev.target.id === 'sr-in' && ev.key === 'Enter'){ ev.preventDefault(); srOpen((ui.srRes || [])[0]); return; }
+  const typing = /INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '') || (document.activeElement || {}).isContentEditable;
+  if((ev.key === 'k' && (ev.metaKey || ev.ctrlKey)) || (ev.key === '/' && !typing && $('#modal').hidden)){ ev.preventDefault(); openSearch(); }
+});
+document.addEventListener('DOMContentLoaded', () => {
+  const brand = document.querySelector('.side-top .brand'); if(!brand) return;
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'hy-search'; b.setAttribute('aria-label', 'Search (Ctrl+K)'); b.title = 'Search (Ctrl+K)';
+  b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>';
+  b.addEventListener('click', () => openSearch());
+  const acct = brand.querySelector('.acct'); if(acct) brand.insertBefore(b, acct); else brand.appendChild(b);
+});
+
+/* ---------- Kenderaan ---------- */
+function svcStatus(v){
+  const t = today(); let byDate = null, byKm = null;
+  if(isYmd(v.lastSvcDate) && Number(v.svcMonths) > 0){ const d = parseYmd(v.lastSvcDate); d.setMonth(d.getMonth() + Number(v.svcMonths)); byDate = ymd(d); }
+  if(v.lastSvcKm !== '' && v.lastSvcKm != null && !isNaN(Number(v.lastSvcKm)) && Number(v.svcKm) > 0) byKm = Number(v.lastSvcKm) + Number(v.svcKm);
+  const daysLeft = byDate ? daysBetween(t, byDate) : null, kmLeft = byKm != null && Number(v.odo) > 0 ? byKm - Number(v.odo) : null;
+  const level = (daysLeft != null && daysLeft < 0) || (kmLeft != null && kmLeft < 0) ? 'late' : (daysLeft != null && daysLeft <= 14) || (kmLeft != null && kmLeft <= 500) ? 'rem' : 'ok';
+  const parts = [byDate ? `by ${fmtD(byDate)}` : '', byKm != null ? `at ${fmtKm(byKm)}` : ''].filter(Boolean);
+  const left = kmLeft != null ? (kmLeft < 0 ? `${fmtKm(-kmLeft)} over` : `${fmtKm(kmLeft)} left`) : daysLeft != null ? (daysLeft < 0 ? `${-daysLeft} days overdue` : `in ${daysLeft} days`) : '';
+  return {known: !!parts.length, level, byDate, byKm, daysLeft, kmLeft, text: parts.join(' or '), left};
+}
+const vehRenewals = v => byKind('renewal').filter(r => v.plate && plateN(r.title).includes(plateN(v.plate))).sort((a,b) => String(a.date).localeCompare(String(b.date)));
+const vehLogs = vid => exps.filter(e => e.vid === vid).sort((a,b) => b.date.localeCompare(a.date) || (b.created||0) - (a.created||0));
+const svcDue = () => byKind('vehicle').map(v => ({v, s: svcStatus(v)})).filter(x => x.s.known && x.s.level !== 'ok');
+function vVehicles(){
+  const t = today(), vs = byKind('vehicle').sort((a,b) => (a.vtype==='kereta' ? 0 : 1) - (b.vtype==='kereta' ? 0 : 1) || String(a.name).localeCompare(String(b.name)));
+  if(!vs.length) return `<div class="stack"><div class="head"><div><h1>Vehicles</h1><p>Service, fuel and costs for each vehicle.</p></div></div>
+    <div class="panel"><p>Add your vehicles to track service, fuel and costs.</p>
+      <div class="inline"><button class="btn pri" data-act="veh-seed">Add Perodua Alza, Zontes 368G and Honda RS150</button><button class="btn" data-act="veh-new">Add a vehicle</button></div></div></div>`;
+  const V = ui.veh || (ui.veh = {sel: vs[0].id, filter: 'all', odo: null});
+  if(!vs.some(v => v.id === V.sel)) V.sel = vs[0].id;
+  const yr = t.slice(0,4), mo = t.slice(0,7), sum = l => l.reduce((s,e) => s + Number(e.amount||0), 0);
+  const cards = vs.map(v => {
+    const s = svcStatus(v), logs = vehLogs(v.id), yl = logs.filter(e => e.date.slice(0,4) === yr), ren = vehRenewals(v);
+    const fuelM = sum(logs.filter(e => e.vtype === 'fuel' && e.date.slice(0,7) === mo));
+    return `<div class="vh-card ${s.level}">
+      <div class="vh-top"><span class="vh-ic">${v.vtype === 'motor' ? '🏍' : '🚗'}</span><div><b>${esc(v.name || 'Vehicle')}</b><span class="vh-plate">${esc(v.plate || '')}</span></div>
+        <button type="button" class="ib" data-open="${v.id}" aria-label="Vehicle details" title="Details">⋯</button></div>
+      <div class="vh-odo">${V.odo === v.id ? `<form class="vh-odof" data-vodo="${v.id}"><input class="f" type="number" inputmode="numeric" min="0" step="1" name="km" value="${Number(v.odo) || ''}" placeholder="Odometer km" aria-label="Odometer km" autofocus><button class="btn pri sm" type="submit">Save</button></form>`
+        : `<b>${Number(v.odo) > 0 ? fmtKm(v.odo) : '— km'}</b><button type="button" class="btn sm ghost" data-act="veh-odo" data-vid="${v.id}">Update km</button>`}</div>
+      <div class="vh-line"><span>🔧 Next service</span>${s.known ? `<span class="chip ${s.level === 'late' ? 'late' : s.level === 'rem' ? 'rem' : 'task'}">${esc(s.left || s.text)}</span>` : '<span class="muted small">set last service</span>'}</div>
+      ${s.known ? `<div class="vh-sub">${esc(s.text)}</div>` : ''}
+      ${ren.map(r => { const n = daysBetween(t, r.date); return `<div class="vh-line" data-open="${r.id}"><span>📄 Road tax & insurance</span><span class="chip ${n < 0 ? 'late' : n <= 30 ? 'rem' : ''}">${n < 0 ? 'Expired ' + esc(fmtD(r.date)) : esc(fmtD(r.date))}</span></div>`; }).join('')}
+      <div class="vh-stats"><div><b>${money(fuelM)}</b><span>fuel this month</span></div><div><b>${money(sum(yl))}</b><span>spent in ${yr}</span></div></div>
+      <button type="button" class="btn sm" data-vlog="${v.id}">+ Add log</button></div>`;
+  }).join('');
+  const sel = vs.find(v => v.id === V.sel);
+  const form = `<form id="f-vlog" class="panel vh-form" autocomplete="off">
+    <div class="ph"><h3>Add log</h3></div>
+    <div class="seg vh-who" role="radiogroup" aria-label="Vehicle">${vs.map(v => `<label><input type="radio" name="vl-vid" value="${v.id}" ${v.id === V.sel ? 'checked' : ''}><span>${v.vtype === 'motor' ? '🏍' : '🚗'} ${esc(v.name)}</span></label>`).join('')}</div>
+    <div class="nf-grid">
+      <label class="lb">Type<select class="f" id="vl-type">${VLOG.map(([k,l,i]) => `<option value="${k}">${i} ${l}</option>`).join('')}</select></label>
+      <label class="lb">Amount (RM)<input class="f amtin" id="vl-amt" type="number" inputmode="decimal" step="0.01" min="0" required></label>
+      <label class="lb">Date<input class="f" id="vl-date" type="date" value="${t}" max="${t}"></label>
+      <label class="lb">Odometer (km)<input class="f" id="vl-km" type="number" inputmode="numeric" min="0" step="1" placeholder="${sel && Number(sel.odo) > 0 ? Number(sel.odo) : 'optional'}"></label>
+      <label class="lb">Place / workshop<input class="f" id="vl-place" placeholder="e.g. Petronas Klang, Bengkel Ah Seng"></label>
+      <label class="lb">Paid with<select class="f" id="vl-method">${METHOD.map(([k,l]) => `<option value="${k}" ${k===lastMethod?'selected':''}>${k?l:'—'}</option>`).join('')}</select></label>
+      <label class="lb full">Note (optional)<input class="f" id="vl-note" placeholder="e.g. engine oil + filter, front tyre"></label>
+    </div>
+    <div class="nf-acts"><label class="small"><input type="checkbox" id="vl-biz"> Business expense</label><label class="btn"><input type="file" id="vl-proof" accept="image/*" hidden><span id="vl-proof-l">📷 Receipt (optional)</span></label><button class="btn pri" type="submit">Save log</button></div>
+    <div class="small muted">Saved as an expense too (Fuel & transport) with its own document number. A service log also updates the next-service date.</div>
+  </form>`;
+  const f = V.filter, shown = vs.flatMap(v => vehLogs(v.id).map(e => ({e, v}))).filter(x => f === 'all' || x.v.id === f).sort((a,b) => b.e.date.localeCompare(a.e.date)).slice(0, 60);
+  const hist = shown.length ? shown.map(({e, v}) => `<div class="row" data-vch="${e.id}"><span class="time">${esc(fmtD(e.date))}</span><div class="rt"><span class="t">${VLOG_I[e.vtype] || '📎'} ${esc(VLOG_L[e.vtype] || 'Log')} · ${esc(v.name)}</span>
+      <span class="meta">${e.km ? `<span>${fmtKm(e.km)}</span>` : ''}${e.receipt && e.receipt.merchant ? `<span>${esc(e.receipt.merchant)}</span>` : ''}${e.vnote ? `<span>${esc(e.vnote)}</span>` : ''}${e.receiptId ? '<span>🖼 receipt</span>' : ''}</span></div><span class="amt">${money(e.amount)}</span></div>`).join('') : empty('No logs yet. Add fuel, service or repairs above.');
+  const byType = vs.map(v => { const yl = vehLogs(v.id).filter(e => e.date.slice(0,4) === yr); return `<tr><td>${esc(v.name)}</td>${VLOG.map(([k]) => `<td class="n">${(() => { const x = sum(yl.filter(e => (e.vtype || 'other') === k)); return x ? fix2(x) : '–'; })()}</td>`).join('')}<td class="n"><b>${fix2(sum(yl))}</b></td></tr>`; }).join('');
+  return `<div class="stack">
+    <div class="head"><div><h1>Vehicles</h1><p>Service, fuel and costs for each vehicle.</p></div><button class="btn sm" data-act="veh-new">+ Vehicle</button></div>
+    <div class="vh-cards">${cards}</div>
+    ${form}
+    <div class="panel"><div class="ph"><h3>History</h3><div class="filters">${[['all','All'], ...vs.map(v => [v.id, v.name])].map(([k,l]) => `<button class="${f===k?'on':''}" data-vfilter="${k}">${esc(l)}</button>`).join('')}</div></div><div class="list">${hist}</div></div>
+    <div class="panel"><div class="ph"><h3>Costs in ${yr} (RM)</h3></div><div class="vh-tw"><table class="vh-tab"><thead><tr><th></th>${VLOG.map(([,l,i]) => `<th class="n">${i} ${l}</th>`).join('')}<th class="n">Total</th></tr></thead><tbody>${byType}</tbody></table></div></div>
+  </div>`;
+}
+
 function vNafkah(){
   const t = today(), people = nafPeople(), set = nafSet(), plan = set.plan || {};
   const N = ui.naf || (ui.naf = {month: ym(), who: people[0]});
@@ -2228,7 +2366,7 @@ function vReview(){
     </div></div>`;
 }
 
-const RENDER = {'nafkah':vNafkah,'berat':vWeight,'team':vTeam,'hari-ini':vToday,'belanja':vExpenses,'tugasan':vTasks,'menunggu':vWaiting,'bayaran':vPayments,'idea':vIdeas,'peringatan':vReminders,'kalendar':vCalendar,'tarikh':vRenewals,
+const RENDER = {'kenderaan':vVehicles,'nafkah':vNafkah,'berat':vWeight,'team':vTeam,'hari-ini':vToday,'belanja':vExpenses,'tugasan':vTasks,'menunggu':vWaiting,'bayaran':vPayments,'idea':vIdeas,'peringatan':vReminders,'kalendar':vCalendar,'tarikh':vRenewals,
   'matlamat':vGoals,'bil':vBills,'perjalanan':vTrips,'orang':vPeople,'mesej':vMessages,'emel':vEmail,'nota':vNotes,'pautan':vLinks,'semakan':vReview};
 function render(){
   renderSide();
@@ -2296,7 +2434,7 @@ function gcalLink(i){
   } else dates = `${d}/${addDays(i.date,1).replace(/-/g,'')}`;
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(i.title||'')}&dates=${dates}&ctz=Asia/Kuala_Lumpur&location=${encodeURIComponent(i.place||'')}&details=${encodeURIComponent(i.notes||'')}`;
 }
-const KCHIP = {nafkah:'plum', weight:'ev', task:'task', reminder:'rem', event:'ev', waiting:'ev', renewal:'late', idea:'plum', payment:'rem', bill:'rem', expense:'', note:'', gift:'plum', person:'plum'};
+const KCHIP = {vehicle:'ev', nafkah:'plum', weight:'ev', task:'task', reminder:'rem', event:'ev', waiting:'ev', renewal:'late', idea:'plum', payment:'rem', bill:'rem', expense:'', note:'', gift:'plum', person:'plum'};
 function fmtField([k, l, type, , opts], v){
   if(v === null || v === undefined || v === '' || v === false) return '';
   if(type==='date') return isYmd(v) ? esc(fmtD(v)) : esc(v);
@@ -2775,6 +2913,10 @@ document.addEventListener('click', async ev => {
     if(n===0){ const d = new Date(); ui.teamMonth = new Date(d.getFullYear(), d.getMonth(), 1); ui.teamSel = today(); }
     else ui.teamMonth = new Date(m.getFullYear(), m.getMonth()+n, 1);
     render(); loadTeam(); return; }
+  if((el = pick('data-srix'))){ srOpen((ui.srRes || [])[Number(el.dataset.srix)]); return; }
+  if((el = pick('data-srq'))){ const i = $('#sr-in'); if(i){ i.value = el.dataset.srq; searchRun(i.value); i.focus(); } return; }
+  if((el = pick('data-vlog'))){ ui.veh.sel = el.dataset.vlog; render(); setTimeout(() => { const a = $('#vl-amt'); if(a){ a.scrollIntoView({block:'center', behavior:'smooth'}); a.focus({preventScroll:true}); } }, 50); return; }
+  if((el = pick('data-vfilter'))){ ui.veh.filter = el.dataset.vfilter; render(); return; }
   if((el = pick('data-nfgive'))){ ui.naf.who = el.dataset.nfgive; render(); setTimeout(() => { const a = $('#nf-amt'); if(a){ a.scrollIntoView({block:'center', behavior:'smooth'}); a.focus({preventScroll:true}); } }, 50); return; }
   if((el = pick('data-nfm'))){ ui.naf.month = el.dataset.nfm; render(); return; }
   if((el = pick('data-nfmon'))){ let [y, mm] = ui.naf.month.split('-').map(Number); mm += Number(el.dataset.nfmon); if(mm < 1){ mm = 12; y--; } if(mm > 12){ mm = 1; y++; } const nm = `${y}-${pad(mm)}`; if(nm <= ym()){ ui.naf.month = nm; render(); } return; }
@@ -2812,6 +2954,13 @@ document.addEventListener('click', async ev => {
     for(const id of ex) await delItem(id);
     toast('Sample items deleted');
   }
+  if(k==='veh-odo'){ ui.veh.odo = act.dataset.vid; render(); setTimeout(() => { const i = document.querySelector('.vh-odof input'); if(i) i.focus(); }, 30); return; }
+  if(k==='veh-seed'){
+    for(const v of [{name:'Perodua Alza', plate:'IIUM355', vtype:'kereta', svcKm:10000, svcMonths:6}, {name:'Zontes 368G', plate:'VQV355', vtype:'motor', svcKm:4000, svcMonths:4}, {name:'Honda RS150', plate:'SMC9175', vtype:'motor', svcKm:3000, svcMonths:4}])
+      await addItem({kind:'vehicle', ...v, odo:null, lastSvcDate:'', lastSvcKm:null, notes:''});
+    toast('3 vehicles added. Tap ⋯ to set the last service date.'); render(); return;
+  }
+  if(k==='veh-new'){ const id = await addItem({kind:'vehicle', name:'New vehicle', plate:'', vtype:'kereta', svcKm:10000, svcMonths:6, odo:null, lastSvcDate:'', lastSvcKm:null, notes:''}); if(id) openEditor(get(id) || {id, kind:'vehicle'}, true); return; }
   if(k==='nf-save-set'){
     const old = nafPeople(), names = old.map((w, i) => { const e = document.querySelector(`[data-nfname="${i}"]`); return (e && e.value.trim()) || w; });
     const plan = {}; names.forEach((w, i) => { const e = document.querySelector(`[data-nftarget="${i}"]`); const n = e ? Number(e.value) : 0; if(n > 0) plan[w] = Math.round(n*100)/100; });
@@ -2890,6 +3039,7 @@ document.addEventListener('change', ev => {
   if(T.id==='ml-tone') ui.mail.tone = T.value;
   if(T.matches('[data-goal]')) updItem(T.dataset.goal, {progress:Number(T.value)});
   if(T.id==='ex-file' && T.files && T.files[0]) scanReceipt(T.files[0]);
+  if(T.id==='vl-proof'){ const l = $('#vl-proof-l'); if(l) l.textContent = T.files && T.files[0] ? '📷 Receipt attached ✓' : '📷 Receipt (optional)'; }
   if(T.id==='nf-proof'){ const l = $('#nf-proof-l'); if(l) l.textContent = T.files && T.files[0] ? '📷 Proof attached ✓' : '📷 Proof (optional)'; }
   if((T.id==='pic-file' || T.id==='pic-file2') && T.files && T.files.length){ const fs = Array.from(T.files); T.value = ''; openPic(fs); }
 });
@@ -2909,6 +3059,33 @@ document.addEventListener('submit', async ev => {
   if(F.classList.contains('trip-add')){ const tr = get(F.dataset.trip); const x = F.elements.t.value.trim(); if(!tr || !x) return;
     await updItem(tr.id, {list:[...(tr.list||[]), {g:'Other', t:x, done:false}]}); return; }
   const add = async (data, msg) => { F.reset(); if(await addItem(data)) toast(msg); };
+  if(F.dataset.vodo){
+    const km = Math.round(Number(F.elements.km.value));
+    if(km > 0) await updItem(F.dataset.vodo, {odo: km});
+    ui.veh.odo = null; render(); toast('Odometer updated'); return;
+  }
+  if(f==='f-vlog'){
+    const amount = num('vl-amt');
+    if(!(amount > 0)){ toast('Enter an amount.'); return; }
+    const vid = (document.querySelector('input[name=vl-vid]:checked') || {}).value, veh = get(vid);
+    if(!veh){ toast('Choose a vehicle.'); return; }
+    const vtype = v('vl-type'), date = isYmd(v('vl-date')) ? v('vl-date') : t, km = Math.round(Number(v('vl-km'))) || 0, place = v('vl-place'), vnote = v('vl-note'), method = v('vl-method');
+    const scope = document.getElementById('vl-biz').checked ? 'bisnes' : 'peribadi';
+    const fileEl = document.getElementById('vl-proof'), file = fileEl && fileEl.files && fileEl.files[0];
+    F.reset(); const vr = document.querySelector(`input[name=vl-vid][value="${vid}"]`); if(vr) vr.checked = true; const pl = $('#vl-proof-l'); if(pl) pl.textContent = '📷 Receipt (optional)';
+    const code = VLOG_C[vtype] || 'VEH', docNo = nextDocNo(scope, date, code);
+    const data = {kind:'expense', amount:Math.round(amount*100)/100, note:`${VLOG_L[vtype]} · ${veh.name}${vnote ? ' · ' + vnote : ''}`, cat:'transport', scope, date, method, code, docNo, vno:nextVno(scope, date), vid, vtype, km: km || null, vnote};
+    if(place) data.receipt = {merchant: place};
+    if(file && assets){ try { const b = await shrinkImage(file); const up = await assets.upload(b, {type: b.type==='image/png' ? 'image/png' : 'image/jpeg'}); data.receiptId = up.id; data.receiptName = docNo + '.' + extOf(b.type); } catch(e){ toast("The receipt photo couldn't be saved. The log was still saved."); } }
+    lastMethod = method; try { localStorage.setItem('pd-method', method); } catch(e){}
+    const patch = {};
+    if(km && km > (Number(veh.odo) || 0)) patch.odo = km;
+    if(vtype === 'service' && (!veh.lastSvcDate || date >= veh.lastSvcDate)){ patch.lastSvcDate = date; if(km) patch.lastSvcKm = km; }
+    const nid = await addItem(data);
+    if(Object.keys(patch).length) await updItem(vid, patch);
+    if(nid) toast(`${VLOG_L[vtype]} ${money(data.amount)} saved · ${docNo}`);
+    ui.veh.sel = vid; render(); return;
+  }
   if(f==='f-naf'){
     const amount = num('nf-amt');
     if(!(amount > 0)){ toast('Enter an amount.'); return; }
@@ -2933,6 +3110,8 @@ document.addEventListener('submit', async ev => {
     const pend = ui.rec && ui.rec.pend;
     const docNo = nextDocNo(scope, date, code);
     const data = {kind:'expense', amount:Math.round(amount*100)/100, note:v('rec-note') || v('rec-payee'), cat, scope, date, method, code, docNo, vno:nextVno(scope, date)};
+    const recVid = $('#rec-vid') ? v('rec-vid') : '', recKm = $('#rec-km') ? Math.round(Number(v('rec-km'))) || 0 : 0;
+    if(recVid){ data.vid = recVid; data.vtype = code === 'FUEL' || cat === 'transport' ? 'fuel' : 'other'; if(recKm) data.km = recKm; const veh = get(recVid); if(veh && recKm > (Number(veh.odo) || 0)) updItem(recVid, {odo: recKm}); }
     if(pend){
       data.receipt = {...(pend.receipt || {}), merchant: v('rec-payee')};
       if(assets){

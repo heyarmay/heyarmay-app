@@ -451,6 +451,12 @@ async function morningMessage(env){
   const lastDay = new Date(Date.UTC(Number(t.slice(0, 4)), Number(t.slice(5, 7)), 0)).getUTCDate();
   const bills = by('bill').filter(b => (b.cycle !== 'tahunan' || Number(b.month) === Number(t.slice(5, 7))) && !(b.paid && b.paid[ym]) && `${ym}-${pad(Math.min(Math.max(Number(b.day) || 1, 1), lastDay))}` <= t);
   if(bills.length) extra.push(`💳 Bill${bills.length > 1 ? 's' : ''} due: ${bills.map(b => b.title).slice(0, 3).join(', ')}`);
+  by('vehicle').forEach(v => {
+    let byDate = null; if(isYmd(v.lastSvcDate) && Number(v.svcMonths) > 0){ const d = new Date(v.lastSvcDate + 'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() + Number(v.svcMonths)); byDate = d.toISOString().slice(0, 10); }
+    const byKm = v.lastSvcKm != null && v.lastSvcKm !== '' && Number(v.svcKm) > 0 ? Number(v.lastSvcKm) + Number(v.svcKm) : null;
+    const dl = byDate ? daysBetween(t, byDate) : null, kl = byKm != null && Number(v.odo) > 0 ? byKm - Number(v.odo) : null;
+    if((dl != null && dl <= 14) || (kl != null && kl <= 500)) extra.push(`🔧 ${v.name} service ${(dl != null && dl < 0) || (kl != null && kl < 0) ? 'overdue' : 'due soon'}${kl != null ? ` (${kl < 0 ? Math.abs(kl) + ' km over' : kl + ' km left'})` : dl != null ? ` (${dl < 0 ? Math.abs(dl) + ' days overdue' : 'in ' + dl + ' days'})` : ''}`);
+  });
   const ren = by('renewal').filter(i => isYmd(i.date) && daysBetween(t, i.date) <= 7);
   if(ren.length) extra.push(`⚠️ ${ren.map(i => i.title + (i.date < t ? ' (expired)' : i.date === t ? ' (today)' : ` (${daysBetween(t, i.date)}d)`)).slice(0, 2).join(', ')}`);
   by('person').forEach(p => { for(const [k, w] of [['birthday', 'birthday'], ['anniv', 'anniversary']]){ const x = nextAnnual(p[k], t); if(x && x.in === 0) extra.push(`🎂 ${p.name}'s ${w} today`); } });
