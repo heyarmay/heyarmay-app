@@ -1042,7 +1042,7 @@ function vExpenses(){
   const sumBox = E.sumBusy ? `<div class="summary idle">Claude is reviewing your spending…</div>` : E.sum ? `<div class="summary">${esc(E.sum)}</div>` : '';
   return `<div class="stack">
     <div class="head"><div><h1>Expenses</h1><p>Where your money goes, personal and business.</p></div>
-      <div class="inline"><button class="btn sm" data-emonth="-1" aria-label="Previous month" ${m<=earliest?'disabled':''}>‹</button><b style="min-width:8.5rem;text-align:center">${monthLabel(m)}</b><button class="btn sm" data-emonth="1" aria-label="Next month" ${cur?'disabled':''}>›</button></div></div>
+      <div class="inline"><button type="button" class="btn sm pri go-add" data-goform="f-exp">+ Record</button>${canImg && sample ? '<button type="button" class="btn sm" data-act="exp-scanbtn">📷 Scan</button>' : ''}<button class="btn sm" data-emonth="-1" aria-label="Previous month" ${m<=earliest?'disabled':''}>‹</button><b style="min-width:8.5rem;text-align:center">${monthLabel(m)}</b><button class="btn sm" data-emonth="1" aria-label="Next month" ${cur?'disabled':''}>›</button></div></div>
     <form class="panel" id="f-exp" autocomplete="off">
       <div class="inline"><input class="f w-num amtin" type="number" step="0.01" min="0" inputmode="decimal" id="ex-amt" placeholder="RM 0.00" required aria-label="Amount in RM">
         <input class="f" id="ex-note" placeholder="What for? e.g. fuel, lunch" aria-label="What for"></div>
@@ -1070,7 +1070,7 @@ function vExpenses(){
       <div class="panel"><div class="ph"><h3>By category</h3>${E.cat?`<button class="btn ghost sm" data-ecat="${E.cat}">All categories</button>`:''}</div><div class="cats">${catHtml}</div></div>
     </div>
     <div class="panel"><div class="ph"><h3>${esc(listTitle)}</h3>${E.cat||E.day?'<button class="btn ghost sm" data-act="exp-clearf">Clear filter</button>':''}</div>
-      <div class="list">${lh || empty(all.length ? 'No transactions match the filter.' : 'No expenses this month yet. Record the first one above, or type in the top box: "lunch 15".')}</div></div>
+      <div class="list">${lh || empty(all.length ? 'No transactions match the filter.' : 'No expenses this month yet. Record the first one below, or type in the top box: "lunch 15".')}</div></div>
   </div>`;
 }
 function openBudget(){
@@ -1495,7 +1495,7 @@ function vTasks(){
   else list.sort(byDue);
   const fl = [['aktif','Active'],['hari','Today & overdue'],['tinggi','High priority'],['selesai','Done']];
   return `<div class="stack">
-    <div class="head"><div><h1>Tasks</h1><p>Things you need to get done yourself, with a due date if there is one.</p></div></div>
+    <div class="head"><div><h1>Tasks</h1><p>Things you need to get done yourself, with a due date if there is one.</p></div><button type="button" class="btn sm pri go-add" data-goform="f-task">+ Task</button></div>
     <form class="panel" id="f-task" autocomplete="off"><div class="inline">
       <input class="f" id="nt-title" placeholder="New task" aria-label="Task title" required>
       <input class="f w-auto" type="date" id="nt-due" aria-label="Due date">
@@ -1512,7 +1512,7 @@ function vWaiting(){
   const done = all.filter(i => i.done).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0)).slice(0,10);
   const people = [...new Set([...byKind('contact').map(c=>c.name), ...byKind('person').map(p=>p.name)].filter(Boolean))];
   return `<div class="stack">
-    <div class="head"><div><h1>Waiting For</h1><p>Things you are waiting on from other people. Anything without an expected date is marked "needs chasing" after 3 quiet days.</p></div></div>
+    <div class="head"><div><h1>Waiting For</h1><p>Things you are waiting on from other people. Anything without an expected date is marked "needs chasing" after 3 quiet days.</p></div><button type="button" class="btn sm pri go-add" data-goform="f-wait">+ Add</button></div>
     <form class="panel" id="f-wait" autocomplete="off">
       <div class="inline"><input class="f" id="nw-title" placeholder="Waiting for what? e.g. Kafe Daun review video edit" required aria-label="Waiting for what">
       <input class="f w-num" id="nw-who" placeholder="From whom" list="people" aria-label="From whom"></div>
@@ -1534,7 +1534,7 @@ function vPayments(){
   const mStart = ym();
   const paidMonth = all.filter(i => i.paid && i.paidAt && ymd(new Date(i.paidAt)).slice(0,7)===mStart);
   return `<div class="stack">
-    <div class="head"><div><h1>Payments</h1><p>Who hasn't paid, how much and since when. "Remind" prepares a WhatsApp message for that client.</p></div></div>
+    <div class="head"><div><h1>Payments</h1><p>Who hasn't paid, how much and since when. "Remind" prepares a WhatsApp message for that client.</p></div><button type="button" class="btn sm pri go-add" data-goform="f-pay">+ Payment</button></div>
     <div class="panel"><div class="stat">
       <div><b>${money(sum(owed))}</b><span>unpaid (${owed.length})</span></div>
       <div><b style="color:var(--rose)">${money(sum(late))}</b><span>overdue (${late.length})</span></div>
@@ -1556,7 +1556,7 @@ function vIdeas(){
   list.sort((a,b)=>(ord[a.status]??0)-(ord[b.status]??0) || (b.created||0)-(a.created||0));
   const tags = [['semua','All'], ...IDEA_TAG];
   return `<div class="stack">
-    <div class="head"><div><h1>Ideas</h1><p>Video ideas, target clients and upsell packages, before they slip away.</p></div></div>
+    <div class="head"><div><h1>Ideas</h1><p>Video ideas, target clients and upsell packages, before they slip away.</p></div><button type="button" class="btn sm pri go-add" data-goform="f-idea">+ Idea</button></div>
     <form class="panel" id="f-idea" autocomplete="off"><div class="inline">
       <input class="f" id="ni-title" placeholder="New idea" required aria-label="Idea">
       <select class="f w-auto" id="ni-tag" aria-label="Type">${IDEA_TAG.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
@@ -1577,7 +1577,7 @@ function vReminders(){
   const d = new Date(Date.now()+3600000);
   const defAt = `${ymd(d)}T${pad(d.getHours())}:00`;
   return `<div class="stack">
-    <div class="head"><div><h1>Reminders</h1><p>Things to be reminded of at a set time. Your morning summary on your phone reads this list too.</p></div></div>
+    <div class="head"><div><h1>Reminders</h1><p>Things to be reminded of at a set time. Your morning summary on your phone reads this list too.</p></div><button type="button" class="btn sm pri go-add" data-goform="f-rem">+ Reminder</button></div>
     <form class="panel" id="f-rem" autocomplete="off"><div class="inline">
       <input class="f" id="nr-title" placeholder="Remind me to…" aria-label="Reminder" required>
       <input class="f w-auto" type="datetime-local" id="nr-at" value="${defAt}" aria-label="Time">
@@ -1889,10 +1889,10 @@ function vVehicles(){
   </form>`;
   const f = V.filter, shown = vs.flatMap(v => vehLogs(v.id).map(e => ({e, v}))).filter(x => f === 'all' || x.v.id === f).sort((a,b) => b.e.date.localeCompare(a.e.date)).slice(0, 60);
   const hist = shown.length ? shown.map(({e, v}) => `<div class="row" data-vch="${e.id}"><span class="time">${esc(fmtD(e.date))}</span><div class="rt"><span class="t">${VLOG_I[e.vtype] || '📎'} ${esc(VLOG_L[e.vtype] || 'Log')} · ${esc(v.name)}</span>
-      <span class="meta">${e.km ? `<span>${fmtKm(e.km)}</span>` : ''}${e.receipt && e.receipt.merchant ? `<span>${esc(e.receipt.merchant)}</span>` : ''}${e.vnote ? `<span>${esc(e.vnote)}</span>` : ''}${e.receiptId ? '<span>🖼 receipt</span>' : ''}</span></div><span class="amt">${money(e.amount)}</span></div>`).join('') : empty('No logs yet. Add fuel, service or repairs above.');
+      <span class="meta">${e.km ? `<span>${fmtKm(e.km)}</span>` : ''}${e.receipt && e.receipt.merchant ? `<span>${esc(e.receipt.merchant)}</span>` : ''}${e.vnote ? `<span>${esc(e.vnote)}</span>` : ''}${e.receiptId ? '<span>🖼 receipt</span>' : ''}</span></div><span class="amt">${money(e.amount)}</span></div>`).join('') : empty('No logs yet. Add fuel, service or repairs below.');
   const byType = vs.map(v => { const yl = vehLogs(v.id).filter(e => e.date.slice(0,4) === yr); return `<tr><td>${esc(v.name)}</td>${VLOG.map(([k]) => `<td class="n">${(() => { const x = sum(yl.filter(e => (e.vtype || 'other') === k)); return x ? fix2(x) : '–'; })()}</td>`).join('')}<td class="n"><b>${fix2(sum(yl))}</b></td></tr>`; }).join('');
   return `<div class="stack">
-    <div class="head"><div><h1>Vehicles</h1><p>Service, fuel and costs for each vehicle.</p></div><button class="btn sm" data-act="veh-new">+ Vehicle</button></div>
+    <div class="head"><div><h1>Vehicles</h1><p>Service, fuel and costs for each vehicle.</p></div><div class="inline"><button type="button" class="btn sm pri go-add" data-goform="f-vlog">+ Log</button><button class="btn sm" data-act="veh-new">+ Vehicle</button></div></div>
     <div class="vh-cards">${cards}</div>
     ${form}
     <div class="panel"><div class="ph"><h3>History</h3><div class="filters">${[['all','All'], ...vs.map(v => [v.id, v.name])].map(([k,l]) => `<button class="${f===k?'on':''}" data-vfilter="${k}">${esc(l)}</button>`).join('')}</div></div><div class="list">${hist}</div></div>
@@ -1952,7 +1952,7 @@ function vNafkah(){
     <div class="nf-grid">${people.map((w, i) => `<label class="lb">Name ${i+1}<input class="f" data-nfname="${i}" value="${esc(w)}"></label><label class="lb">Monthly target (RM)<input class="f" data-nftarget="${i}" type="number" inputmode="decimal" step="1" min="0" value="${Number(plan[w]) || ''}" placeholder="optional"></label>`).join('')}</div>
     <div class="nf-acts"><span class="small muted">The target shows a progress bar and how much is left each month.</span><button type="button" class="btn pri sm" data-act="nf-save-set">Save</button></div></details>`;
   return `<div class="stack">
-    <div class="head"><div><h1>Nafkah</h1><p>Money you give to ${people.map(esc).join(' and ')}, month by month.</p></div></div>
+    <div class="head"><div><h1>Nafkah</h1><p>Money you give to ${people.map(esc).join(' and ')}, month by month.</p></div><button type="button" class="btn sm pri go-add" data-goform="f-naf">+ Record</button></div>
     <div class="nf-cards">${cards}</div>
     ${form}
     <div class="panel"><div class="ph"><h3>Last 12 months</h3><div class="inline"><button class="btn sm" data-nfmon="-1" aria-label="Previous month">‹</button><span class="small" style="min-width:120px;text-align:center">${esc(monthLabel(m))}</span><button class="btn sm" data-nfmon="1" aria-label="Next month" ${m >= ym() ? 'disabled' : ''}>›</button></div></div>
@@ -1968,13 +1968,13 @@ function vWeight(){
     <div class="wform-row"><label class="lb">Weight (kg)<input class="f amtin" id="w-kg" type="number" inputmode="decimal" step="0.1" min="20" max="400" placeholder="${st ? Number(st.last.kg).toFixed(1) : '70.0'}" required></label>
     <label class="lb">Date<input class="f" id="w-date" type="date" value="${t}" max="${t}"></label>
     <button class="btn pri" type="submit">Save</button></div></form>`;
-  if(!st) return `<div class="stack"><div class="head"><div><h1>Weight</h1><p>Log your body weight. The summary and chart appear after a few entries.</p></div></div>${form}</div>`;
+  if(!st) return `<div class="stack"><div class="head"><div><h1>Weight</h1><p>Log your body weight. The summary and chart appear after a few entries.</p></div><button type="button" class="btn sm pri go-add" data-goform="f-weight">+ Weight</button></div>${form}</div>`;
   const tile = (label, val, sub) => `<div class="wtile"><span>${label}</span><b>${val}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
   const R = ui.wRange || '90';
   const rng = [['30','30 days'],['90','90 days'],['365','1 year'],['all','All']];
   const recent = st.w.slice(-8).reverse();
   return `<div class="stack">
-    <div class="head"><div><h1>Weight</h1><p>Last entry: ${esc(fmtD(st.last.date))}${st.last.date===t?'':` (${relDays(daysBetween(t, st.last.date))})`}.</p></div></div>
+    <div class="head"><div><h1>Weight</h1><p>Last entry: ${esc(fmtD(st.last.date))}${st.last.date===t?'':` (${relDays(daysBetween(t, st.last.date))})`}.</p></div><button type="button" class="btn sm pri go-add" data-goform="f-weight">+ Weight</button></div>
     ${form}
     <div class="wtiles">
       ${tile('Latest', Number(st.last.kg).toFixed(1) + ' kg', esc(fmtD(st.last.date)))}
@@ -2073,7 +2073,7 @@ function vRenewals(){
   const later = all.filter(i => !soon.includes(i));
   const yearCost = all.reduce((s,i)=>s+Number(i.cost||0),0);
   return `<div class="stack">
-    <div class="head"><div><h1>Expiry Dates</h1><p>Road tax, insurance, passport, licence, domains and subscriptions. Shows on Today 30 days before expiry, red with 7 days left.</p></div></div>
+    <div class="head"><div><h1>Expiry Dates</h1><p>Road tax, insurance, passport, licence, domains and subscriptions. Shows on Today 30 days before expiry, red with 7 days left.</p></div><button type="button" class="btn sm pri go-add" data-goform="f-renew">+ Add</button></div>
     <form class="panel" id="f-renew" autocomplete="off"><div class="inline">
       <input class="f" id="nn-title" placeholder="e.g. Myvi road tax, Passport, fuyohh.com domain" required aria-label="Item">
       <input class="f w-auto" type="date" id="nn-date" required aria-label="Expiry date">
@@ -2082,7 +2082,7 @@ function vRenewals(){
       <button class="btn pri" type="submit">Add</button></div></form>
     <div class="grid">
       ${panel('Next 30 days', soon.length?soon.map(rowRenew).join(''):empty('Nothing expiring soon.'))}
-      ${panel('Later', later.length?later.map(rowRenew).join(''):empty('Add your documents and subscriptions above.'), yearCost?`<span class="small muted mono">${money(yearCost)} a year</span>`:'')}
+      ${panel('Later', later.length?later.map(rowRenew).join(''):empty('Add your documents and subscriptions below.'), yearCost?`<span class="small muted mono">${money(yearCost)} a year</span>`:'')}
     </div></div>`;
 }
 
@@ -2094,7 +2094,7 @@ function vBills(){
   const yearly = all.filter(b => b.cycle==='tahunan').reduce((s,b)=>s+Number(b.amount||0),0);
   const unpaid = month.filter(b => !billPaid(b)).reduce((s,b)=>s+Number(b.amount||0),0);
   return `<div class="stack">
-    <div class="head"><div><h1>Bills & Commitments</h1><p>Recurring bills and subscriptions. Tick them when paid; they reset next month.</p></div></div>
+    <div class="head"><div><h1>Bills & Commitments</h1><p>Recurring bills and subscriptions. Tick them when paid; they reset next month.</p></div><button type="button" class="btn sm pri go-add" data-goform="f-bill">+ Bill</button></div>
     <div class="panel"><div class="stat">
       <div><b>${money(monthly)}</b><span>monthly commitments</span></div>
       <div><b style="color:var(--rose)">${money(unpaid)}</b><span>unpaid in ${esc(BLN[new Date().getMonth()])}</span></div>
@@ -2126,7 +2126,7 @@ function vGoals(){
         <div class="list">${goals.length?goals.map(g=>`<div class="row" data-open="${g.id}" style="flex-direction:column;gap:6px;cursor:default">
           <div style="display:flex;justify-content:space-between;gap:8px;width:100%"><span class="t" style="cursor:pointer">${esc(g.title)}</span><span class="mono small">${Number(g.progress)||0}%</span></div>
           <input type="range" min="0" max="100" step="5" value="${Number(g.progress)||0}" id="gp-${g.id}" data-goal="${g.id}" aria-label="Progress ${esc(g.title)}">
-          <span class="meta">${g.quarter?`<span class="chip">${esc(g.quarter)}</span>`:''}${g.notes?`<span>${esc(g.notes.slice(0,90))}</span>`:''}${exChip(g)}</span></div>`).join(''):empty('Set 1 to 3 goals for this quarter.')}</div>
+          <span class="meta">${g.quarter?`<span class="chip">${esc(String(g.quarter).replace(/^S(\d)/, 'Q$1'))}</span>`:''}${g.notes?`<span>${esc(g.notes.slice(0,90))}</span>`:''}${exChip(g)}</span></div>`).join(''):empty('Set 1 to 3 goals for this quarter.')}</div>
         <form id="f-goal" class="addrow" autocomplete="off"><div class="inline"><input class="f" id="ng-title" placeholder="New goal" required aria-label="Goal"><button class="btn pri" type="submit">Add</button></div></form></div>
       <div class="panel"><div class="ph"><h3>Habits · 14 days</h3></div>
         <div class="list">${habits.length?habits.map(h=>{ const {cells,streak} = habitStrip(h); return `<div class="row" style="cursor:default;align-items:center">
@@ -2146,7 +2146,7 @@ function vTrips(){
   const trips = byKind('trip').sort((a,b)=>(a.start||'9999').localeCompare(b.start||'9999'));
   const t = today();
   return `<div class="stack">
-    <div class="head"><div><h1>Trips</h1><p>A checklist for every trip. "Fill basic list" adds the things people usually forget.</p></div></div>
+    <div class="head"><div><h1>Trips</h1><p>A checklist for every trip. "Fill basic list" adds the things people usually forget.</p></div><button type="button" class="btn sm pri go-add" data-goform="f-trip">+ Trip</button></div>
     <form class="panel" id="f-trip" autocomplete="off"><div class="inline">
       <input class="f" id="nv-title" placeholder="Destination, e.g. Langkawi" required aria-label="Destination">
       <input class="f w-auto" type="date" id="nv-start" aria-label="Depart"><span class="small muted">to</span><input class="f w-auto" type="date" id="nv-end" aria-label="Return">
@@ -2207,7 +2207,7 @@ function vPeople(){
         : `<div class="panel">${empty('Save the tradespeople, mechanics and suppliers you trust, so their numbers are ready when you need them.')}</div>`}`;
   }
   return `<div class="stack">
-    <div class="head"><div><h1>People</h1><p>The people who matter in your life and work.</p></div></div>
+    <div class="head"><div><h1>People</h1><p>The people who matter in your life and work.</p></div><button type="button" class="btn sm pri go-add" data-goform="${tab==='penting'?'f-person':tab==='hadiah'?'f-gift':'f-servis'}">+ Add</button></div>
     <div class="filters">${tabs.map(([k,l])=>`<button data-otab="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div>
     ${body}</div>`;
 }
@@ -2292,7 +2292,7 @@ function vNotes(){
   return `<div class="stack">
     <div class="head"><div><h1>Notes & Meetings</h1><p>Ideas, information and meeting notes.</p></div>
       <button class="btn pri" data-act="new-note">New note</button></div>
-    ${sample?`<div class="panel"><div class="ph"><h3>Turn meeting notes into actions</h3></div>
+    ${sample?`<div class="panel meet-panel"><div class="ph"><h3>Turn meeting notes into actions</h3></div>
       <textarea class="f" id="meet-text" rows="5" placeholder="Paste meeting notes here. Claude will pull out your tasks, things you are waiting on from others, and key dates.">${esc(mt.text)}</textarea>
       <div class="inline" style="padding-bottom:${mt.res?0:8}px"><button class="btn" data-act="meet-run" ${mt.busy?'disabled':''}>${mt.busy?'Sorting…':'Find actions'}</button><span class="small muted">The original notes are saved as a note.</span></div>
       ${res}</div>`:''}
@@ -2308,7 +2308,7 @@ function vLinks(){
   const ls = byKind('link');
   const groups = LINK_G.filter(([g]) => ls.some(l => (l.group||'Lain')===g));
   return `<div class="stack">
-    <div class="head"><div><h1>Links</h1><p>Your doorway to all your systems, sites and portals.</p></div></div>
+    <div class="head"><div><h1>Links</h1><p>Your doorway to all your systems, sites and portals.</p></div><button type="button" class="btn sm pri go-add" data-goform="f-link">+ Link</button></div>
     <form class="panel" id="f-link" autocomplete="off"><div class="inline">
       <input class="f w-num" id="nl-title" placeholder="Name" required aria-label="Name">
       <input class="f" id="nl-url" placeholder="https://…" required aria-label="Address" inputmode="url">
@@ -2913,6 +2913,7 @@ document.addEventListener('click', async ev => {
     if(n===0){ const d = new Date(); ui.teamMonth = new Date(d.getFullYear(), d.getMonth(), 1); ui.teamSel = today(); }
     else ui.teamMonth = new Date(m.getFullYear(), m.getMonth()+n, 1);
     render(); loadTeam(); return; }
+  if((el = pick('data-goform'))){ const fm = document.getElementById(el.dataset.goform); if(fm){ fm.scrollIntoView({block:'center', behavior:'smooth'}); const i = fm.querySelector('input:not([type=hidden]):not([type=radio]):not([type=file]):not([type=checkbox]), select, textarea'); if(i) setTimeout(() => i.focus({preventScroll:true}), 350); fm.classList.remove('flash'); void fm.offsetWidth; fm.classList.add('flash'); } return; }
   if((el = pick('data-srix'))){ srOpen((ui.srRes || [])[Number(el.dataset.srix)]); return; }
   if((el = pick('data-srq'))){ const i = $('#sr-in'); if(i){ i.value = el.dataset.srq; searchRun(i.value); i.focus(); } return; }
   if((el = pick('data-vlog'))){ ui.veh.sel = el.dataset.vlog; render(); setTimeout(() => { const a = $('#vl-amt'); if(a){ a.scrollIntoView({block:'center', behavior:'smooth'}); a.focus({preventScroll:true}); } }, 50); return; }
@@ -2954,6 +2955,7 @@ document.addEventListener('click', async ev => {
     for(const id of ex) await delItem(id);
     toast('Sample items deleted');
   }
+  if(k==='exp-scanbtn'){ const f = $('#ex-file'); if(f) f.click(); return; }
   if(k==='veh-odo'){ ui.veh.odo = act.dataset.vid; render(); setTimeout(() => { const i = document.querySelector('.vh-odof input'); if(i) i.focus(); }, 30); return; }
   if(k==='veh-seed'){
     for(const v of [{name:'Perodua Alza', plate:'IIUM355', vtype:'kereta', svcKm:10000, svcMonths:6}, {name:'Zontes 368G', plate:'VQV355', vtype:'motor', svcKm:4000, svcMonths:4}, {name:'Honda RS150', plate:'SMC9175', vtype:'motor', svcKm:3000, svcMonths:4}])
