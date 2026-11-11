@@ -1030,6 +1030,14 @@ async function handle(req, env, ctx){
   }
 
   // Gambar resit
+  // D1 returns BLOB columns as a plain array of numbers; turn any shape back into bytes.
+  function blobBytes(d){
+    if(d instanceof Uint8Array) return d;
+    if(d instanceof ArrayBuffer) return new Uint8Array(d);
+    if(Array.isArray(d)) return Uint8Array.from(d);
+    if(typeof d === 'string' && /^\d{1,3}(,\d{1,3})+$/.test(d.slice(0, 64))) return Uint8Array.from(d.split(','), Number);
+    return te.encode(String(d || ''));
+  }
   if(p === '/api/files' && m === 'POST'){
     const type = (req.headers.get('content-type') || '').split(';')[0].trim();
     if(!/^image\/(jpeg|png|webp|gif)$/.test(type)) return J({error: 'type'}, 415);
@@ -1045,7 +1053,11 @@ async function handle(req, env, ctx){
     if(m === 'GET'){
       const r = await env.DB.prepare('SELECT type, data FROM files WHERE id = ?').bind(fm[1]).first();
       if(!r) return T('Not found', 404);
-      return new Response(r.data, {headers: {'content-type': r.type, 'cache-control': 'private, max-age=86400'}});
+      const bytes = blobBytes(r.data);
+      const h = {'content-type': r.type, 'content-length': String(bytes.byteLength), 'cache-control': 'private, max-age=86400'};
+      const dl = url.searchParams.get('dl');
+      if(dl){ const nm = dl.replace(/[^\w.\-]+/g, '_').slice(0, 120) || 'receipt'; h['content-disposition'] = `attachment; filename="${nm}"`; }
+      return new Response(bytes, {headers: h});
     }
     if(m === 'DELETE'){ await env.DB.prepare('DELETE FROM files WHERE id = ?').bind(fm[1]).run(); return new Response(null, {status: 204}); }
   }

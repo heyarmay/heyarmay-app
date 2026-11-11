@@ -3011,7 +3011,16 @@ document.addEventListener('click', async ev => {
   if(k==='vz-clear'){ ui.voice = {...ui.voice, text:'', res:null, summary:''}; renderVoice(); }
   if(k==='voucher'){ const id = editing && editing.id; closeEditor(); openVoucher(get(id)); }
   if(k==='vch-pdf'){ const e = get($('#modal').dataset.vid); if(e) savePdf([e], `${docOf(e)}.pdf`); }
-  if(k==='vch-img'){ const e = get($('#modal').dataset.vid); if(e && e.receiptId){ try { const r = await fetch('/_blob/' + e.receiptId); const b = await r.blob(); await saveBlobAs(b, e.receiptName || docOf(e) + '.' + extOf(b.type)); } catch(err){ toast("Couldn't download the receipt."); } } }
+  if(k==='vch-img'){ const e = get($('#modal').dataset.vid); if(e && e.receiptId){
+    const name = e.receiptName || docOf(e) + '.jpg';
+    try {
+      const a = document.createElement('a');
+      a.href = '/_blob/' + e.receiptId + '?dl=' + encodeURIComponent(name); a.download = name; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 1000);
+      toast('Downloading ' + name);
+    } catch(err){
+      try { const r = await fetch('/_blob/' + e.receiptId); const b = await r.blob(); await saveBlobAs(b, name); } catch(er){ toast("Couldn't download the receipt."); }
+    } } }
   if(k==='rec-rot'){ ui.rec.rot = (ui.rec.rot + 90) % 360; const i = $('#rec-img'); if(i) i.style.transform = `rotate(${ui.rec.rot}deg)`; }
   if(k==='rec-zoom'){ const i = $('#rec-img'); if(i) i.closest('.rec-img').classList.toggle('big'); }
   if(k==='exp-zip') receiptsZip(ui.exp.month);
