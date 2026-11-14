@@ -599,6 +599,11 @@ button.ghost:hover{border-color:var(--rose);color:var(--rose)}
 .err{display:none;margin-top:14px;background:var(--rose-soft);color:var(--rose);border:1px solid rgba(197,51,82,.25);border-radius:12px;padding:10px 12px;font-size:.88rem;animation:rise .3s var(--ease) both}
 .ok{display:none;margin-top:14px;background:var(--accent-soft);color:var(--accent);border:1px solid rgba(var(--glow),.3);border-radius:12px;padding:10px 12px;font-size:.88rem;animation:rise .3s var(--ease) both}
 .hint{color:var(--muted);font-size:.8rem;margin-top:6px}
+.fg{margin-top:18px;font-size:.88rem}
+.fg summary{cursor:pointer;color:var(--accent);font-weight:600;list-style:none}
+.fg summary::-webkit-details-marker{display:none}
+.fg .hint{margin:8px 0 10px}
+.fg .ghost{width:100%}
 .use h2,.pw-h{font-size:1rem;font-weight:650;margin:22px 0 10px;letter-spacing:-.01em}
 .use-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .use-grid div{display:flex;flex-direction:column;gap:2px;padding:10px;border-radius:12px;border:1px solid var(--line);background:var(--field)}
@@ -660,7 +665,10 @@ ${setup ? '<div class="hint">3–40 characters: letters, numbers, dot, dash or @
 ${pwField('p', setup ? 'new-password' : 'current-password', 'Password')}
 ${setup ? '<div class="hint">At least 8 characters.</div>' + pwField('p2', 'new-password', 'Repeat password') : ''}
 <button class="go" type="submit">${setup ? 'Create & sign in' : 'Sign in'}</button>
-<div class="err" role="alert"></div></form>`, `
+<div class="err" role="alert"></div></form>
+${setup ? '' : `<details class="fg"><summary>Forgot your ID or password?</summary>
+<p class="hint">A reset link will be sent as a notification to your phone (the one that gets the 8am notification). Tap it on that phone to choose a new ID and password. The link works for 15 minutes.</p>
+<button class="ghost" id="fg" type="button">Send reset link to my phone</button><div class="ok" id="fg-ok" role="status"></div></details>`}`, `
 const SETUP = ${setup};
 $('#f').addEventListener('submit', async ev => {
   ev.preventDefault(); showErr('');
@@ -683,7 +691,50 @@ $('#f').addEventListener('submit', async ev => {
   } catch(e){ showErr('No connection. Try again.'); }
   btn.disabled = false; btn.textContent = SETUP ? 'Create & sign in' : 'Sign in';
 });
+if($('#fg')) $('#fg').addEventListener('click', async () => {
+  const b = $('#fg'), k = $('#fg-ok'); b.disabled = true; b.textContent = 'Sending…'; showErr('');
+  try {
+    const r = await post('/api/auth/forgot', {});
+    if(r.ok && r.sent){ k.textContent = 'Sent. Check the notification on your phone and tap it.'; k.style.display = 'block'; b.textContent = 'Send again'; }
+    else showErr(r.error === 'busy' ? 'A link was sent a few times already. Wait an hour and try again.' : r.error === 'none' ? "No phone has notifications turned on, so the link can't be sent." : "Couldn't send the link. Try again.");
+  } catch(e){ showErr('No connection. Try again.'); }
+  b.disabled = false; if(b.textContent === 'Sending…') b.textContent = 'Send reset link to my phone';
+});
 $('#u').focus();`);
+}
+function resetPage(){
+  return pageShell('Reset sign-in', `<h1>Reset sign-in</h1>
+<p class="lead" id="rs-lead">Checking your link…</p>
+<form id="f" novalidate hidden>
+<label for="u">ID</label><input id="u" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+<div class="hint">This is your current ID. Keep it or type a new one (3–40 characters: letters, numbers, dot, dash or @).</div>
+${pwField('p', 'new-password', 'New password')}
+<div class="hint">At least 8 characters.</div>
+${pwField('p2', 'new-password', 'Repeat new password')}
+<button class="go" type="submit">Save & sign in</button>
+<div class="err" role="alert"></div></form>
+<p id="rs-bad" hidden><a href="/">← Back to sign in</a></p>`, `
+const T = decodeURIComponent((location.hash || '').slice(1)); history.replaceState(null, '', '/reset');
+(async () => {
+  const r = T ? await post('/api/auth/reset-check', {t: T}) : {};
+  if(!r.ok){ $('#rs-lead').textContent = r.error === 'locked' ? 'Too many tries. Wait 15 minutes, then send a new link.' : 'This link has expired or was already used. Go back and send a new one.'; $('#rs-bad').hidden = false; return; }
+  $('#rs-lead').textContent = 'Choose a new password. Other devices will be signed out.';
+  $('#u').value = r.user || ''; $('#f').hidden = false; $('#p').focus();
+})();
+$('#f').addEventListener('submit', async ev => {
+  ev.preventDefault(); showErr('');
+  const u = $('#u').value.trim().toLowerCase(), p = $('#p').value;
+  if(!/^[a-z0-9._@-]{3,40}$/.test(u)) return showErr('ID must be 3–40 characters: letters, numbers, dot, dash or @.');
+  if(p.length < 8) return showErr('Password must be at least 8 characters.');
+  if(p !== $('#p2').value) return showErr("Passwords don't match. Type them again.");
+  const btn = $('.go'); btn.disabled = true; btn.textContent = 'One moment…';
+  try {
+    const r = await post('/api/auth/reset', {t: T, user: u, key: await derive(u, p)});
+    if(r.ok){ location.href = '/'; return; }
+    showErr(r.error === 'expired' ? 'This link has expired. Go back and send a new one.' : r.error === 'locked' ? 'Too many tries. Wait 15 minutes.' : "That didn't work. Try again.");
+  } catch(e){ showErr('No connection. Try again.'); }
+  btn.disabled = false; btn.textContent = 'Save & sign in';
+});`);
 }
 function accountPage(user){
   const safe = String(user).replace(/[^a-z0-9._@-]/g, '');
@@ -851,6 +902,35 @@ async function handle(req, env, ctx){
     await setPassword(env, user, b.key);
     return J({ok: true}, 200, {'set-cookie': setCookie(await newSession(env))});
   }
+  // Lupa ID / kata laluan: pautan sekali guna dihantar sebagai notifikasi ke telefon yang dah daftar
+  if(p === '/api/auth/forgot' && m === 'POST'){
+    if(!await getAuth(env)) return J({error: 'none'}, 409);
+    const now = Date.now(), rl = JSON.parse(await getMeta(env, 'reset_rl') || '[]').filter(t => t > now - 3600e3);
+    if(rl.length >= 3) return J({error: 'busy'}, 429);
+    const subs = await env.DB.prepare('SELECT COUNT(*) AS n FROM push_subs').first();
+    if(!subs || !subs.n) return J({error: 'none'}, 409);
+    rl.push(now); await setMeta(env, 'reset_rl', JSON.stringify(rl));
+    const tok = b64u(crypto.getRandomValues(new Uint8Array(32)));
+    await setMeta(env, 'reset', JSON.stringify({h: await sha256hex(tok), exp: now + 15*60e3}));
+    const r = await pushAll(env, {title: 'Reset your Hey Armay sign-in', body: 'Tap to choose a new password. Works for 15 minutes. If you did not ask for this, ignore it.', url: '/reset#' + tok, tag: 'hy-reset'});
+    return J({ok: true, sent: r.sent});
+  }
+  if((p === '/api/auth/reset-check' || p === '/api/auth/reset') && m === 'POST'){
+    if(await lockedOut(env, ip)) return J({error: 'locked'}, 429);
+    const b = await req.json().catch(() => null) || {};
+    const rs = JSON.parse(await getMeta(env, 'reset') || 'null'), auth = await getAuth(env);
+    const good = rs && auth && typeof b.t === 'string' && b.t.length >= 20 && b.t.length < 100 && rs.exp > Date.now() && (await sha256hex(b.t)) === rs.h;
+    if(!good){ await noteFail(env, ip); return J({error: 'expired'}, 400); }
+    if(p === '/api/auth/reset-check') return J({ok: true, user: auth.user});
+    const user = normId(b.user);
+    if(!validId(user)) return J({error: 'id'}, 400);
+    if(!validKey(b.key)) return J({error: 'key'}, 400);
+    await setPassword(env, user, b.key);
+    await env.DB.prepare("DELETE FROM meta WHERE k = 'reset'").run();
+    await env.DB.prepare('DELETE FROM sessions').run();
+    return J({ok: true}, 200, {'set-cookie': setCookie(await newSession(env))});
+  }
+  if(p === '/reset' && m === 'GET') return new Response(resetPage(), {headers: PAGE_HEADERS});
   if(!await sessionOk(req, env)){
     if(p.startsWith('/api/') || p.startsWith('/_blob/')) return J({error: 'login'}, 401);
     if(m !== 'GET' && m !== 'HEAD') return T('Sign in first', 401);
